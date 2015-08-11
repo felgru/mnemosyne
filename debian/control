@@ -1,0 +1,19 @@
+Source: mnemosyne
+Section: misc
+Priority: extra
+Maintainer: Robert Lemmen <robertle@semistable.com>
+Build-Depends: debhelper (>= 8.0.0), python-setuptools
+Standards-Version: 3.9.2
+X-Python-Version: 2.7
+Homepage: http://www.mnemosyne-proj.org
+
+Package: mnemosyne
+Architecture: all
+Depends: python, python-qt4, python-qt4-sql, python-matplotlib, 
+    python-cherrypy3, libqt4-sql-sqlite
+Description: spaced repetition flash-card program
+ The Mnemosyne software resembles a traditional flash-card program to help you
+ memorise question/answer pairs, but with an important twist: it uses a
+ sophisticated algorithm to schedule the best time for an item to come up for
+ review. Difficult items that you tend to forget quickly will be scheduled more
+ often, while Mnemosyne won't waste your time on things you remember well.

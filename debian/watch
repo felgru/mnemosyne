@@ -1,0 +1,2 @@
+version=2
+http://sf.net/mnemosyne-proj/Mnemosyne-(.+)\.(?:zip|tgz|tbz2|txz|tar\.gz|tar\.bz2|tar\.xz)
