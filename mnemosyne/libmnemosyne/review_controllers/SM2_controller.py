@@ -56,7 +56,7 @@ class SM2Controller(ReviewController):
         self.active_count = None
         self.rep_count = 0
         self.widget = self.component_manager.current("review_widget")\
-                      (self.component_manager)
+                      (component_manager=self.component_manager)
         self.widget.activate()
         self.scheduler().reset()
         self.show_new_question()
@@ -74,26 +74,16 @@ class SM2Controller(ReviewController):
         try:
             self.previous_card = self.database().card(\
                 self.card._id, is_id_internal=True)
-        except: # No previous card, or it was deleted.
+        except Exception: # No previous card, or it was deleted.
             self.previous_card = None
         sch = self.scheduler()
         sch.reset()
         sch.rebuild_queue()
         self.reload_counters()
         self.update_status_bar_counters()
-        # Try to get a new card in case there was previously no card active,
-        # or if the previous card is no longer in the queue.
         if self.previous_card is None or not self.previous_card.active:
             self.show_new_question()
-        # If the card is scheduled (grade >=2) but no longer in the queue, we
-        # assume it disappeared e.g. because it was answered in a sync
-        # partner. Therefore, we show a new card.
-        # It could also have disappeared because the queue is limited in size
-        # and does not contain all scheduled cards. In this case, we will
-        # suboptimally 'abandon' the current card and it will be revisited
-        # later.
-        elif self.previous_card.grade >= 2 and \
-            not sch.is_in_queue(self.previous_card):
+        elif not sch.is_in_queue(self.previous_card):
             self.show_new_question()
         # Otherwise, we keep the card, but we need to remove it from the
         # queue. For robustness reasons, we also remove the second grade
@@ -112,6 +102,7 @@ class SM2Controller(ReviewController):
         self._state = state
 
     def show_new_question(self):
+        self.widget.stop_media()
         # Reload the counters if they have not yet been initialised. Also do
         # this if the active counter is zero, make sure it is really zero to
         # get a correct test for no more cards.
@@ -149,10 +140,15 @@ class SM2Controller(ReviewController):
         """Note that this also pulls in a new question."""
 
         self.flush_sync_server()
+        # Guide the learning process. 
+        if self.config()["shown_learn_new_cards_help"] == False:
+            if self.scheduled_count == 1:
+                self.main_widget().show_information(_("You have finished your scheduled reviews. Now, learn as many failed or new cards as you feel like."))
+                self.config()["shown_learn_new_cards_help"] = True          
         card_to_grade = self.card
         previous_grade = card_to_grade.grade
         self.update_counters(previous_grade, grade)
-        self.rep_count += 1
+        self.rep_count += 1     
         if self.scheduler().is_prefetch_allowed(card_to_grade):
             self.show_new_question()
             interval = self.scheduler().grade_answer(card_to_grade, grade)
@@ -299,8 +295,8 @@ class SM2Controller(ReviewController):
             # Button text.
             if self._state == "SELECT GRADE" and \
                self.config()["show_intervals"] == "buttons":
-                w.set_grade_text(grade, str(self.scheduler().process_answer(\
-                                            self.card, grade, dry_run=True)))
+                w.set_grade_text(grade, self.scheduler().process_answer(\
+                                        self.card, grade, dry_run=True))
             else:
                 w.set_grade_text(grade, str(grade))
 

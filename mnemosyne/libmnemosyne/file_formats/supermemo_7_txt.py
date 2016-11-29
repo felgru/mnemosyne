@@ -44,7 +44,7 @@ class SuperMemo7Txt(FileFormat, MediaPreprocessor):
         """Parse html style escaped unicode (e.g. &#33267;)"""
 
         for match in re0.finditer(s):
-            u = unichr(int(match.group(1)))  # Integer part.
+            u = chr(int(match.group(1)))  # Integer part.
             s = s.replace(match.group(), u)  # Integer part with &# and ;.
         return s
 
@@ -55,28 +55,15 @@ class SuperMemo7Txt(FileFormat, MediaPreprocessor):
         # SuperMemo uses 0x03 to represent the accented u character. Since
         # this does not seem to be a standard encoding, we simply replace this.
         line = line.replace("\x03", "\xfa")
-        try:
-            line = unicode(line, "utf-8")
-        except:
-            try:
-                line = unicode(line, "latin")
-            except:
-                self.main_widget().show_error(\
-                        _("Could not determine encoding."))
-                return
         return self.process_html_unicode(line.rstrip())
 
     def do_import(self, filename, extra_tag_names=None):
         f = None
         try:
-            f = file(filename)
+            f = open(filename, 'r')
         except:
-            try:
-                f = file(filename.encode("latin"))
-            except:
-                self.main_widget().show_error(\
-                    _("Could not determine encoding."))
-                return
+            self.main_widget().show_error(_("Could not load file."))
+            return
         state = "CARD-START"
         next_state = None
         error = False

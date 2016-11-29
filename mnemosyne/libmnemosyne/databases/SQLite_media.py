@@ -14,7 +14,7 @@ from mnemosyne.libmnemosyne.utils import expand_path, contract_path
 from mnemosyne.libmnemosyne.utils import is_filesystem_case_insensitive
 from mnemosyne.libmnemosyne.utils import copy_file_to_dir, remove_empty_dirs_in
 
-re_src = re.compile(r"""src=['\"](.+?)['\"]""", re.DOTALL | re.IGNORECASE)
+re_src = re.compile(r"""(src|data)=\"(.+?)\"""", re.DOTALL | re.IGNORECASE)
 
 
 class SQLiteMedia(object):
@@ -28,15 +28,19 @@ class SQLiteMedia(object):
     def media_dir(self):
         if self.config()["last_database"] == \
             os.path.basename(self.config()["last_database"]):
-            return unicode(os.path.join(self.config().data_dir,
-                os.path.basename(self.config()["last_database"]) + "_media"))
+            return os.path.join(self.config().data_dir,
+                os.path.basename(self.config()["last_database"]) + "_media")
         else:
-            return unicode(self.config()["last_database"] + "_media")
+            return self.config()["last_database"] + "_media"
 
     def create_media_dir_if_needed(self):
         media_dir = self.media_dir()
         if not os.path.exists(media_dir):
-            os.makedirs(media_dir)
+            try:
+                os.makedirs(media_dir)
+            except WindowsError:
+                self.main_widget().show_error(_("Could not create" ) + " " + \
+media_dir + ".\n" + _("Check your file permissions and make sure the directory is not open in a file browser."))
 
     def fact_contains_static_media_files(self, fact):
         # Could be part of fact.py, but is put here to have all media related
@@ -59,7 +63,15 @@ class SQLiteMedia(object):
         filename = os.path.join(self.media_dir(), os.path.normcase(filename))
         if not os.path.exists(filename):
             return "0"
-        media_file = file(filename, "rb")
+        
+        media_file = open(filename, "rb")
+        
+        #try:
+        #    media_file = file(filename, "rb")
+        #except UnicodeEncodeError:  # Android specific issue.
+        #    media_file = file(filename.encode("utf-8"), "rb")
+                
+            
         hasher = md5()
         while True:
             buffer = media_file.read(8096)
@@ -71,7 +83,7 @@ class SQLiteMedia(object):
         # The following implementation uses the modification date. Less
         # robust, but could be useful on a mobile device.
 
-        #return str(os.path.getmtime(media_file))
+        #return os.path.getmtime(media_file)
 
     def check_for_edited_media_files(self):
         # Regular media files.
@@ -83,17 +95,22 @@ class SQLiteMedia(object):
             new_hash = self._media_hash(filename)
             if hash != new_hash:
                 new_hashes[filename] = new_hash
-        for filename, new_hash in new_hashes.iteritems():
+        for filename, new_hash in new_hashes.items():
             self.con.execute("update media set _hash=? where filename=?",
                 (new_hash, filename))
             self.log().edited_media_file(filename)
 
     def dynamically_create_media_files(self):
-        # Other media files, e.g. latex.
+        # First check which components are actually working. E.g., on a
+        # headless server, it's possible that latex is not installed, so
+        # we don't need to go through all the effort.
+        creators = [f for f in self.component_manager.all("hook",
+            "dynamically_create_media_files") if f.is_working() == True]
+        if len(creators) == 0:
+            return
         for cursor in self.con.execute("select value from data_for_fact"):
-            for f in self.component_manager.all("hook",
-                "dynamically_create_media_files"):
-                f.run(cursor[0])
+            for creator in creators:
+                creator.run(cursor[0])
 
     def active_dynamic_media_files(self):
         # Other media files, e.g. latex.
@@ -125,7 +142,7 @@ class SQLiteMedia(object):
         """
 
         for match in re_src.finditer("".join(fact.data.values())):
-            filename = match.group(1)
+            filename = match.group(2)
             if filename.startswith("http:"):
                 continue
             if len(filename) > 200:
@@ -136,11 +153,11 @@ _("Media filename rather long. This could cause problems using this file on a di
 _("Filename contains '#', which could cause problems on some operating systems."))
             if not os.path.exists(filename) and \
                 not os.path.exists(expand_path(filename, self.media_dir())):
-                self.main_widget().show_error(_("Missing media file!"))
-                for fact_key, value in fact.data.iteritems():
+                self.main_widget().show_error(_("Missing media file!") + "\n\n" + filename)              
+                for fact_key, value in fact.data.items():
                     fact.data[fact_key] = \
                         fact.data[fact_key].replace(match.group(),
-                        "src_missing=\"%s\"" % match.group(1))
+                        "src_missing=\"%s\"" % match.group(2))
                 continue
             # If needed, copy file to the media dir. Normally this happens when
             # the user clicks 'Add image' e.g., but he could have typed in the
@@ -149,8 +166,8 @@ _("Filename contains '#', which could cause problems on some operating systems."
                 filename = copy_file_to_dir(filename, self.media_dir())
             else:  # We always store Unix paths internally.
                 filename = filename.replace("\\", "/")
-            for fact_key, value in fact.data.iteritems():
-                fact.data[fact_key] = value.replace(match.group(1), filename)
+            for fact_key, value in fact.data.items():
+                fact.data[fact_key] = value.replace(match.group(2), filename)
                 self.con.execute("""update data_for_fact set value=? where
                     _fact_id=? and key=?""",
                     (fact.data[fact_key], fact._id, fact_key))
@@ -178,7 +195,7 @@ _("Filename contains '#', which could cause problems on some operating systems."
         for result in self.con.execute(\
             "select value from data_for_fact where value like '%src=%'"):
             for match in re_src.finditer(result[0]):
-                filename = match.group(1)
+                filename = match.group(2)
                 if case_insensitive:
                     filename = filename.lower()
                 files_in_db.add(filename)

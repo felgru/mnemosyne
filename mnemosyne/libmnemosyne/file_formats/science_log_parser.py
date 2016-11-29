@@ -134,10 +134,12 @@ class ScienceLogParser(object):
                 self.user_id, self.machine_id, self.log_number = \
                     before_extension.split("_")
             self.log_number = int(self.log_number)
+        if os.path.getsize(filename) == 0:
+            return
         if filename.endswith(".bz2"):
             self.logfile = bz2.BZ2File(filename)
         else:
-            self.logfile = file(filename)
+            self.logfile = open(filename, "rb")
         # For pre-2.0 logs, we need to hang on to the previous timestamp, as
         # this will be used as the time the card was shown, in order to
         # calculate the actual interval. (The timestamps for repetitions are
@@ -147,14 +149,15 @@ class ScienceLogParser(object):
         self.lower_timestamp_limit = 1121021345 # 2005-07-10 21:49:05.
         self.upper_timestamp_limit = time.time()
         for line in self.logfile:
+            line = line.decode("utf-8")
             if line.strip() == "":
                 continue
             try:
                 self._parse_line(line)
             except:
-                print ("Ignoring error in file '%s' while parsing line:\n%s" %
+                print("Ignoring error in file '%s' while parsing line:\n%s" %
                     (filename, line))
-                print traceback_string()
+                print(traceback_string())
                 sys.stdout.flush()
 
     def _parse_line(self, line):
@@ -163,7 +166,7 @@ class ScienceLogParser(object):
                                          "%Y-%m-%d %H:%M:%S")))
         if not self.lower_timestamp_limit < self.timestamp < \
                self.upper_timestamp_limit:
-            raise TypeError, "Ignoring impossible date %s" % parts[0]
+            raise TypeError("Ignoring impossible date %s" % parts[0])
         if parts[1].startswith("Program started"):
             # Parse version string. They typically look like:
             #   Mnemosyne 1.0-RC nt win32

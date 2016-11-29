@@ -4,8 +4,11 @@
 
 import os
 import time
+import string
+import datetime
 
 from openSM2sync.log_entry import EventTypes
+from mnemosyne.libmnemosyne.translator import _
 
 HOUR = 60 * 60 # Seconds in an hour.
 DAY = 24 * HOUR # Seconds in a day.
@@ -211,7 +214,7 @@ class SQLiteLogging(object):
             return
         # Open log file and get starting index.
         logname = os.path.join(self.config().data_dir, "log.txt")
-        logfile = file(logname, "a")
+        logfile = open(logname, "a")
         sql_res = self.con.execute(\
             "select _last_log_id from partnerships where partner=?",
             ("log.txt", )).fetchone()
@@ -227,35 +230,34 @@ class SQLiteLogging(object):
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S",
                 time.localtime(cursor[2]))
             if event_type == EventTypes.STARTED_PROGRAM:
-                print >> logfile, "%s : Program started : %s" \
-                      % (timestamp, cursor[3])
+                print("%s : Program started : %s" \
+                      % (timestamp, cursor[3]), file=logfile)
             elif event_type == EventTypes.STARTED_SCHEDULER:
-                print >> logfile, "%s : Scheduler : %s" \
-                      % (timestamp, cursor[3])
+                print("%s : Scheduler : %s" \
+                      % (timestamp, cursor[3]), file=logfile)
             elif event_type == EventTypes.LOADED_DATABASE:
-                print >> logfile, "%s : Loaded database %d %d %d" \
-                      % (timestamp, cursor[6], cursor[7], cursor[8])
+                print("%s : Loaded database %d %d %d" \
+                      % (timestamp, cursor[6], cursor[7], cursor[8]), file=logfile)
             elif event_type == EventTypes.SAVED_DATABASE:
-                print >> logfile, "%s : Saved database %d %d %d" \
-                      % (timestamp, cursor[6], cursor[7], cursor[8])
+                print("%s : Saved database %d %d %d" \
+                      % (timestamp, cursor[6], cursor[7], cursor[8]), file=logfile)
             elif event_type == EventTypes.ADDED_CARD:
                 # Use dummy grade and interval, We log the first repetition
                 # separately anyhow.
-                print >> logfile, "%s : New item %s -1 -1" \
-                      % (timestamp, cursor[3])
+                print("%s : New item %s -1 -1" \
+                      % (timestamp, cursor[3]), file=logfile)
             elif event_type == EventTypes.DELETED_CARD:
-                print >> logfile, "%s : Deleted item %s" \
-                      % (timestamp, cursor[3])
+                print("%s : Deleted item %s" \
+                      % (timestamp, cursor[3]), file=logfile)
             elif event_type == EventTypes.REPETITION:
                 new_interval = int(cursor[14] - cursor[2])
-                print >> logfile, \
-              "%s : R %s %d %1.2f | %d %d %d %d %d | %d %d | %d %d | %1.1f" %\
+                print("%s : R %s %d %1.2f | %d %d %d %d %d | %d %d | %d %d | %1.1f" %\
                          (timestamp, cursor[3], cursor[4], cursor[5],
                           cursor[6], cursor[7], cursor[8],cursor[9],
                           cursor[10], cursor[11], cursor[12], new_interval,
-                          0, cursor[13])
+                          0, cursor[13]), file=logfile)
             elif event_type == EventTypes.STOPPED_PROGRAM:
-                print >> logfile, "%s : Program stopped" % (timestamp, )
+                print("%s : Program stopped" % (timestamp, ), file=logfile)
         # Update partnership index.
         if index:
             self.con.execute(\
@@ -336,5 +338,87 @@ class SQLiteLogging(object):
           "select distinct object_id from log where event_type=?",
           (EventTypes.ADDED_CARD, ))):
             self.log_added_card(int(time.time()), id)
-
-
+            
+    def merge_logs_from_other_database(self, filename, insertion_log_index):
+        
+        """This function will delete all logs in the database after 
+        'insertion_log_index' and merge all logs from 'filename'.
+        
+        """
+        
+        w = self.main_widget()
+        w.set_progress_text(_("Merging logs..."))
+        script = string.Template("""
+            begin;
+            delete from log where _id>$_id;
+            end;
+            vacuum;
+            attach "$filename" as to_merge;
+            begin; 
+            insert into log(event_type, timestamp, object_id, grade,
+                easiness, acq_reps, ret_reps, lapses, acq_reps_since_lapse,
+                ret_reps_since_lapse, scheduled_interval, actual_interval,
+                thinking_time, next_rep, scheduler_data)
+                select event_type, timestamp, object_id, grade, easiness, 
+                acq_reps, ret_reps, lapses, acq_reps_since_lapse,
+                ret_reps_since_lapse, scheduled_interval, actual_interval,
+                thinking_time, next_rep, scheduler_data from to_merge.log; 
+            commit; 
+        """).substitute(_id=insertion_log_index, filename=filename)
+        self.con.executescript(script) 
+        w.close_progress()
+        
+    def archive_old_logs(self):
+        
+        """This puts all the data of old reviews in a separate file, which
+        is no longer backed up. All clients do this independently, and when
+        doing an initial sync, all these archive files are sent across so as
+        not to lose and information. This could cause duplication, however,
+        so later on a algorithm needs to be written to a create a single 
+        archive from these multiple files, by making sure that there are
+        no log lines with duplicate (timestamps, id).
+        
+        """
+        
+        self.main_widget().set_progress_text(_("Archiving old logs..."))
+        self.backup()
+        one_year_ago = int(time.time()) - 356 * DAY
+        # Create archive dir if needed.
+        archive_dir = os.path.join(self.config().data_dir, "archive")
+        if not os.path.exists(archive_dir):
+            os.makedirs(archive_dir)
+        # Create empty archive database.
+        db_name = os.path.basename(self.database().path()).rsplit(".", 1)[0]
+        archive_name = db_name + "-" + self.config().machine_id() + "-" +\
+            datetime.datetime.today().strftime("%Y%m%d-%H%M%S.db")
+        archive_path = os.path.join(archive_dir, archive_name)
+        from mnemosyne.libmnemosyne.databases._sqlite3 import _Sqlite3
+        arch_con = _Sqlite3(self.component_manager, archive_path)        
+        from mnemosyne.libmnemosyne.databases.SQLite import SCHEMA
+        arch_con.executescript(SCHEMA.substitute(pregenerated_data="")) 
+        arch_con.executescript("""drop index i_log_timestamp;
+                                  drop index i_log_object_id;""")        
+        arch_con.commit()
+        arch_con.close()
+        # Transfer old logs.
+        script = string.Template("""   
+            attach "$archive_path" as archive;
+            begin; 
+            insert into archive.log(event_type, timestamp, object_id, grade,
+                easiness, acq_reps, ret_reps, lapses, acq_reps_since_lapse,
+                ret_reps_since_lapse, scheduled_interval, actual_interval,
+                thinking_time, next_rep, scheduler_data)
+                select event_type, timestamp, object_id, grade, easiness, 
+                acq_reps, ret_reps, lapses, acq_reps_since_lapse,
+                ret_reps_since_lapse, scheduled_interval, actual_interval,
+                thinking_time, next_rep, scheduler_data from log 
+                    where timestamp<$one_year_ago; 
+            commit; 
+            begin;
+            delete from log where timestamp<$one_year_ago;
+            end;
+            vacuum;
+        """).substitute(archive_path=archive_path, one_year_ago=one_year_ago)
+        self.con.executescript(script) 
+        self.main_widget().close_progress()
+        

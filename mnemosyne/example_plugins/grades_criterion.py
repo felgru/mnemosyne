@@ -46,15 +46,14 @@ class GradesCriterionApplier(CriterionApplier):
 from mnemosyne.libmnemosyne.ui_components.criterion_widget \
      import CriterionWidget
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui
 
 class GradesCriterionWdgt(QtGui.QWidget, CriterionWidget):
 
     used_for = GradesCriterion
 
-    def __init__(self, component_manager, parent):
-        CriterionWidget.__init__(self, component_manager)
-        QtGui.QWidget.__init__(self, parent)
+    def __init__(self, **kwds):
+        super().__init__(**kwds)    
         self.verticalLayout = QtGui.QVBoxLayout(self)
         self.horizontalLayout = QtGui.QHBoxLayout()
         self.label = QtGui.QLabel("Activate cards with grade <=", self)

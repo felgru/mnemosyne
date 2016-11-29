@@ -6,7 +6,7 @@ import os
 import sys
 import socket
 
-from PyQt4 import QtCore
+from PyQt5 import QtCore
 
 from mnemosyne.libmnemosyne import Mnemosyne
 from mnemosyne.libmnemosyne.translator import _
@@ -51,20 +51,18 @@ class ServerThread(QtCore.QThread, SyncServer):
 
     sync_started_signal = QtCore.pyqtSignal()
     sync_ended_signal = QtCore.pyqtSignal()
-    information_signal = QtCore.pyqtSignal(QtCore.QString)
-    error_signal = QtCore.pyqtSignal(QtCore.QString)
-    question_signal = QtCore.pyqtSignal(QtCore.QString, QtCore.QString,
-        QtCore.QString, QtCore.QString)
-    set_progress_text_signal = QtCore.pyqtSignal(QtCore.QString)
+    information_signal = QtCore.pyqtSignal(str)
+    error_signal = QtCore.pyqtSignal(str)
+    question_signal = QtCore.pyqtSignal(str, str, str, str)
+    set_progress_text_signal = QtCore.pyqtSignal(str)
     set_progress_range_signal = QtCore.pyqtSignal(int)
     set_progress_update_interval_signal = QtCore.pyqtSignal(int)
     increase_progress_signal = QtCore.pyqtSignal(int)
     set_progress_value_signal = QtCore.pyqtSignal(int)
     close_progress_signal = QtCore.pyqtSignal()
 
-    def __init__(self, component_manager):
-        QtCore.QThread.__init__(self)
-        SyncServer.__init__(self, component_manager, self)
+    def __init__(self, **kwds):
+        super().__init__(ui=self, **kwds)
         self.server_has_connection = False
         # A fast moving progress bar seems to cause crashes on Windows.
         self.show_numeric_progress_bar = (sys.platform != "win32")
@@ -74,7 +72,7 @@ class ServerThread(QtCore.QThread, SyncServer):
             self.serve_until_stopped()
         except socket.error:
             self.show_error(_("Unable to start sync server."))
-        except Exception, e:
+        except Exception as e:
             self.show_error(str(e) + "\n" + traceback_string())
         # Clean up after stopping.
         mutex.lock()
@@ -93,13 +91,14 @@ class ServerThread(QtCore.QThread, SyncServer):
         database_released.wakeAll()
 
     def load_database(self, database_name):
+        # Load the database in the sync server thread.
         mutex.lock()
         # Libmnemosyne itself could also generate dialog messages, so
         # we temporarily override the main_widget with the threaded
         # routines in this class.
         self.component_manager.components[None]["main_widget"].append(self)
-        self.sync_started_signal.emit()
-        if not self.server_has_connection:
+        self.sync_started_signal.emit()  # Unload database in main thread. 
+        if not self.server_has_connection:           
             database_released.wait(mutex)
         SyncServer.load_database(self, database_name)
         self.server_has_connection = True
@@ -107,15 +106,19 @@ class ServerThread(QtCore.QThread, SyncServer):
         return self.database()
 
     def unload_database(self, database):
+        # Unload the database in the sync server thread.
         mutex.lock()
+        # Put back the widget now, as it needs to be in place before
+        # 'emit' resets the GUI.
+        if self in self.component_manager.components[None]["main_widget"]:
+            self.component_manager.components[None]["main_widget"].pop()        
         if self.server_has_connection:
             self.database().release_connection()
             self.server_has_connection = False
             database_released.wakeAll()
-        if self in self.component_manager.components[None]["main_widget"]:
-            self.component_manager.components[None]["main_widget"].pop()
+            self.sync_ended_signal.emit()  # Load database in main thread.
+            database_released.wait(mutex)
         mutex.unlock()
-        self.sync_ended_signal.emit()
 
     def flush(self):
         mutex.lock()
@@ -180,9 +183,8 @@ class QtSyncServer(Component, QtCore.QObject):
 
     component_type = "sync_server"
 
-    def __init__(self, component_manager):
-        Component.__init__(self, component_manager)
-        QtCore.QObject.__init__(self)
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
         self.thread = None
         # Since we will overwrite the true main widget in the thread, we need
         # to save it here.
@@ -193,8 +195,10 @@ class QtSyncServer(Component, QtCore.QObject):
             # Restart the thread to have the new settings take effect.
             self.deactivate()
             try:
-                self.thread = ServerThread(self.component_manager)
-            except socket.error, (errno, e):
+                self.thread = ServerThread(\
+                    component_manager=self.component_manager)
+            except socket.error as exception:
+                (errno, e) = exception.args
                 if errno == 98:
                     self.main_widget().show_error(\
                         _("Unable to start sync server.") + " " + \
@@ -235,6 +239,7 @@ class QtSyncServer(Component, QtCore.QObject):
             self.thread.start()
 
     def unload_database(self):
+        # Unload database in main thread.
         mutex.lock()
         # Since this function can get called by libmnemosyne outside of the
         # syncing protocol, 'thread.server_has_connection' is not necessarily
@@ -251,16 +256,19 @@ class QtSyncServer(Component, QtCore.QObject):
         mutex.unlock()
 
     def load_database(self):
+        # Load database in main thread.
         mutex.lock()
         try:
             self.database().load(self.config()["last_database"])
-        except: # Database locked in server thread.
+        except Exception as e: # Database locked in server thread.
             database_released.wait(mutex)
             self.database().load(self.config()["last_database"])
         self.log().loaded_database()
         self.review_controller().reset_but_try_to_keep_current_card()
         self.review_controller().update_dialog(redraw_all=True)
+        self.controller().update_title()
         self.thread.server_has_connection = False
+        database_released.wakeAll()
         mutex.unlock()
 
     def flush(self):

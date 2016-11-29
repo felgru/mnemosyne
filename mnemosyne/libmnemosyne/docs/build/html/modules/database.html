@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 
@@ -191,8 +189,19 @@ syncing (see SQLite_logging.py, SQLite_statistics.py, SQLite_sync.py).</p>
 <dd></dd></dl>
 
 <dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.data_dir">
+<tt class="descname">data_dir</tt><big>(</big><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.data_dir" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns directory of the database.</p>
+</dd></dl>
+
+<dl class="method">
 <dt id="mnemosyne.libmnemosyne.database.Database.deactivate">
 <tt class="descname">deactivate</tt><big>(</big><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.deactivate" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="mnemosyne.libmnemosyne.database.Database.default_criterion_name">
+<tt class="descname">default_criterion_name</tt><em class="property"> = '__DEFAULT__'</em><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.default_criterion_name" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="attribute">
@@ -269,8 +278,38 @@ without extension.</p>
 <dd></dd></dl>
 
 <dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.has_card_type_with_id">
+<tt class="descname">has_card_type_with_id</tt><big>(</big><em>id</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_card_type_with_id" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.has_card_with_id">
+<tt class="descname">has_card_with_id</tt><big>(</big><em>id</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_card_with_id" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
 <dt id="mnemosyne.libmnemosyne.database.Database.has_clone">
 <tt class="descname">has_clone</tt><big>(</big><em>card_type</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_clone" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.has_criterion_with_id">
+<tt class="descname">has_criterion_with_id</tt><big>(</big><em>id</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_criterion_with_id" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.has_fact_view_with_id">
+<tt class="descname">has_fact_view_with_id</tt><big>(</big><em>id</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_fact_view_with_id" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.has_fact_with_id">
+<tt class="descname">has_fact_with_id</tt><big>(</big><em>id</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_fact_with_id" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.has_tag_with_id">
+<tt class="descname">has_tag_with_id</tt><big>(</big><em>id</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.has_tag_with_id" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="method">
@@ -353,6 +392,14 @@ thread.</p>
 <tt class="descname">set_scheduler_data</tt><big>(</big><em>scheduler_data</em><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.set_scheduler_data" title="Permalink to this definition">¶</a></dt>
 <dd></dd></dl>
 
+<dl class="method">
+<dt id="mnemosyne.libmnemosyne.database.Database.sorted_card_types">
+<tt class="descname">sorted_card_types</tt><big>(</big><big>)</big><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.sorted_card_types" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sorts card types so that all the built-in card types appear first,
+in the order determined by their id, and then all the user card types
+appear alphabetically.</p>
+</dd></dl>
+
 <dl class="attribute">
 <dt id="mnemosyne.libmnemosyne.database.Database.suffix">
 <tt class="descname">suffix</tt><em class="property"> = ''</em><a class="headerlink" href="#mnemosyne.libmnemosyne.database.Database.suffix" title="Permalink to this definition">¶</a></dt>
@@ -430,7 +477,7 @@ thread.</p>
         <div class="sphinxsidebarwrapper">
   <h4>Previous topic</h4>
   <p class="topless"><a href="configuration.html"
-                        title="previous chapter"><tt class="docutils literal docutils literal"><span class="pre">Configuration</span></tt></a></p>
+                        title="previous chapter"><tt class="docutils literal"><span class="pre">Configuration</span></tt></a></p>
   <h4>Next topic</h4>
   <p class="topless"><a href="file_format.html"
                         title="next chapter"><tt class="docutils literal"><span class="pre">FileFormat</span></tt></a></p>
@@ -476,8 +523,8 @@ thread.</p>
     </div>
     <div class="footer">
         &copy; Copyright 2008, Peter Bienstman.
-      Last updated on Jun 01, 2012.
-      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.3.
+      Last updated on Feb 16, 2016.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.
     </div>
   </body>
 </html>

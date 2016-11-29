@@ -6,7 +6,7 @@ import os
 import re
 import sys
 import time
-import cPickle
+import pickle
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.utils import MnemosyneError
@@ -14,9 +14,6 @@ from mnemosyne.libmnemosyne.file_format import FileFormat
 from mnemosyne.libmnemosyne.file_formats.mnemosyne1 import Mnemosyne1
 from mnemosyne.libmnemosyne.file_formats.science_log_parser \
      import ScienceLogParser
-
-re_src = re.compile(r"""src=['\"](.+?)['\"]""", re.DOTALL | re.IGNORECASE)
-re_sound = re.compile(r"""<sound src=\".+?\">""", re.DOTALL | re.IGNORECASE)
 
 
 class Mnemosyne1Mem(FileFormat, Mnemosyne1):
@@ -65,13 +62,56 @@ class Mnemosyne1Mem(FileFormat, Mnemosyne1):
         sys.modules["mnemosyne.core"] = object()
         sys.modules["mnemosyne.core.mnemosyne_core"] \
             = Mnemosyne1.MnemosyneCore()
+        # For importing Python 2 pickles, we run into this bug:
+        # http://bugs.python.org/issue22005
+        # Workaround is opening this file using 'bytes' encoding, but
+        # this requires extra work for us in setting up the data members.
         try:
-            memfile = file(filename, "rb")
+            memfile = open(filename, "rb")
             header = memfile.readline()
             self.starttime, self.categories, self.items \
-                = cPickle.load(memfile)
-            self.starttime = self.starttime.time
-        except:
+                = pickle.load(memfile, encoding="bytes")
+            self.starttime = self.starttime.__dict__[b"time"]
+            for category in self.categories:
+                category.name = category.__dict__[b"name"]
+                category.active = category.__dict__[b"active"]
+                del category.__dict__[b"name"]
+                del category.__dict__[b"active"]
+            for item in self.items:
+                if type(item.__dict__[b"id"]) == bytes:
+                    item.id = str(item.__dict__[b"id"], "utf-8")
+                else:
+                    item.id = item.__dict__[b"id"]
+                item.cat = item.__dict__[b"cat"]
+                item.q = item.__dict__[b"q"]
+                item.a = item.__dict__[b"a"]
+                item.unseen = item.__dict__[b"unseen"]
+                item.grade = item.__dict__[b"grade"]
+                item.next_rep = item.__dict__[b"next_rep"]
+                item.last_rep = item.__dict__[b"last_rep"]
+                item.easiness = item.__dict__[b"easiness"] 
+                item.acq_reps = item.__dict__[b"acq_reps"] 
+                item.ret_reps = item.__dict__[b"ret_reps"]  
+                item.lapses = item.__dict__[b"lapses"] 
+                item.acq_reps_since_lapse = \
+                    item.__dict__[b"acq_reps_since_lapse"] 
+                item.ret_reps_since_lapse = \
+                    item.__dict__[b"ret_reps_since_lapse"]                
+                del item.__dict__[b"id"]
+                del item.__dict__[b"cat"]
+                del item.__dict__[b"q"]
+                del item.__dict__[b"a"]
+                del item.__dict__[b"unseen"]
+                del item.__dict__[b"grade"]
+                del item.__dict__[b"next_rep"]
+                del item.__dict__[b"last_rep"] 
+                del item.__dict__[b"easiness"] 
+                del item.__dict__[b"acq_reps"] 
+                del item.__dict__[b"ret_reps"]  
+                del item.__dict__[b"lapses"] 
+                del item.__dict__[b"acq_reps_since_lapse"] 
+                del item.__dict__[b"ret_reps_since_lapse"]
+        except Exception as e:
             self.main_widget().show_error(_("Unable to open file."))
             raise MnemosyneError
 
@@ -93,7 +133,7 @@ class Mnemosyne1Mem(FileFormat, Mnemosyne1):
         # Manage database indexes.
         db.before_1x_log_import()
         filenames = [os.path.join(log_dir, logname) for logname in \
-            sorted(os.listdir(unicode(log_dir))) if logname.endswith(".bz2")]
+            sorted(os.listdir(log_dir)) if logname.endswith(".bz2")]
         # log.txt can also contain data we need to import, especially on the
         # initial upgrade from 1.x. 'ids_to_parse' will make sure we only pick
         # up the relevant events. (If we do the importing after having used

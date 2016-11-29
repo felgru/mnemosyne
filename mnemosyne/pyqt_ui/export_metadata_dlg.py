@@ -2,24 +2,24 @@
 # export_metadata_dlg.py <Peter.Bienstman@UGent.be>
 #
 
-from PyQt4 import QtGui, QtCore
+from PyQt5 import QtGui, QtCore, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.ui_export_metadata_dlg import Ui_ExportMetadataDlg
 from mnemosyne.libmnemosyne.ui_components.dialogs import ExportMetadataDialog
 
 
-class ExportMetadataDlg(QtGui.QDialog, Ui_ExportMetadataDlg,
-    ExportMetadataDialog):
+class ExportMetadataDlg(QtWidgets.QDialog, ExportMetadataDialog, 
+                        Ui_ExportMetadataDlg):
 
-    def __init__(self, component_manager):
-        ExportMetadataDialog.__init__(self, component_manager)
-        QtGui.QDialog.__init__(self, self.main_widget())
+    def __init__(self, **kwds):
+        super().__init__(**kwds)    
         self.setupUi(self)
-        self.setWindowFlags(self.windowFlags() \
-            & ~ QtCore.Qt.WindowContextHelpButtonHint)
-        self.setWindowFlags(self.windowFlags() \
-            & ~ QtCore.Qt.WindowCloseButtonHint)  # Does not seem to work...
+        self.setWindowFlags(QtCore.Qt.Dialog \
+                | QtCore.Qt.CustomizeWindowHint \
+                | QtCore.Qt.WindowTitleHint \
+                & ~ QtCore.Qt.WindowCloseButtonHint \
+                & ~ QtCore.Qt.WindowContextHelpButtonHint)
         self.author_name.setText(self.config()["author_name"])
         self.author_email.setText(self.config()["author_email"])
         self.date.setDate(QtCore.QDate.currentDate())
@@ -57,6 +57,7 @@ class ExportMetadataDlg(QtGui.QDialog, Ui_ExportMetadataDlg,
         self.revision.setReadOnly(True)
         self.notes.setReadOnly(True)
         self.allow_cancel = False
+        self.setWindowTitle(_("Import cards"))
 
     def closeEvent(self, event):
         # Generated when clicking the window's close button.
@@ -64,7 +65,7 @@ class ExportMetadataDlg(QtGui.QDialog, Ui_ExportMetadataDlg,
             event.ignore()
             self.reject()
         else:
-            event.ignore()
+            event.accept()
 
     def keyPressEvent(self, event):
         # Note: for the following to work reliably, there should be no
@@ -77,23 +78,23 @@ class ExportMetadataDlg(QtGui.QDialog, Ui_ExportMetadataDlg,
             else:
                 event.ignore()
         else:
-            QtGui.QDialog.keyPressEvent(self, event)
+            QtWidgets.QDialog.keyPressEvent(self, event)
 
     def reject(self):
         self.cancelled = True
-        return QtGui.QDialog.reject(self)
+        return QtWidgets.QDialog.reject(self)
 
     def values(self):
         if self.cancelled:
             return None
         metadata = {}
-        metadata["card_set_name"] = unicode(self.card_set_name.text())
-        metadata["author_name"] = unicode(self.author_name.text())
-        metadata["author_email"] = unicode(self.author_email.text())
-        metadata["tags"] = unicode(self.tags.text())
-        metadata["date"] = unicode(self.date.date().toString())
+        metadata["card_set_name"] = self.card_set_name.text()
+        metadata["author_name"] = self.author_name.text()
+        metadata["author_email"] = self.author_email.text()
+        metadata["tags"] = self.tags.text()
+        metadata["date"] = self.date.date().toString()
         metadata["revision"] = str(self.revision.value())
-        metadata["notes"] = unicode(self.notes.toPlainText())
+        metadata["notes"] = self.notes.toPlainText()
         self.config()["author_name"] = metadata["author_name"]
         self.config()["author_email"] = metadata["author_email"]
         return metadata

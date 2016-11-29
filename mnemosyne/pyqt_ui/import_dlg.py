@@ -3,18 +3,17 @@
 #
 
 import os
-from PyQt4 import QtGui, QtCore
+from PyQt5 import QtGui, QtCore, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.ui_import_dlg import Ui_ImportDlg
 from mnemosyne.libmnemosyne.ui_components.dialogs import ImportDialog
 
 
-class ImportDlg(QtGui.QDialog, Ui_ImportDlg, ImportDialog):
+class ImportDlg(QtWidgets.QDialog, ImportDialog, Ui_ImportDlg):
 
-    def __init__(self, component_manager):
-        ImportDialog.__init__(self, component_manager)
-        QtGui.QDialog.__init__(self, self.main_widget())
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
         self.setupUi(self)
         # File formats.
         i = 0
@@ -23,7 +22,7 @@ class ImportDlg(QtGui.QDialog, Ui_ImportDlg, ImportDialog):
             if not format.import_possible:
                 continue
             self.file_formats.addItem(_(format.description))
-            if type(format) == self.config()["import_format"]:
+            if str(type(format)) == self.config()["import_format"]:
                 current_index = i
             i += 1
         if current_index is not None:
@@ -55,8 +54,7 @@ class ImportDlg(QtGui.QDialog, Ui_ImportDlg, ImportDialog):
 
     def format(self):
         for _format in self.component_manager.all("file_format"):
-            if _(_format.description) == \
-                unicode(self.file_formats.currentText()):
+            if _(_format.description) == self.file_formats.currentText():
                 return _format
 
     def browse(self):
@@ -68,14 +66,14 @@ class ImportDlg(QtGui.QDialog, Ui_ImportDlg, ImportDialog):
             self.config()["import_dir"] = os.path.dirname(filename)
 
     def accept(self):
-        filename = unicode(self.filename_box.text())
+        filename = self.filename_box.text()
         if filename and os.path.exists(filename):
-            extra_tag_names = unicode(self.tags.currentText())
+            extra_tag_names = self.tags.currentText()
             self.config()["import_extra_tag_names"] = extra_tag_names
             if not extra_tag_names:
                 extra_tag_names = None
-            self.config()["import_format"] = type(self.format())
+            self.config()["import_format"] = str(type(self.format()))
             self.format().do_import(filename, extra_tag_names)
-            QtGui.QDialog.accept(self)
+            QtWidgets.QDialog.accept(self)
         else:
             self.main_widget().show_error(_("File does not exist."))

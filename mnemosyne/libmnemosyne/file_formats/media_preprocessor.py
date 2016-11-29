@@ -4,14 +4,13 @@
 
 import os
 import re
-import shutil
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.component import Component
-from mnemosyne.libmnemosyne.utils import MnemosyneError, expand_path
+from mnemosyne.libmnemosyne.utils import MnemosyneError, expand_path, copy
 
-re_src = re.compile(r"""src=['\"](.+?)['\"]""", re.DOTALL | re.IGNORECASE)
-re_sound = re.compile(r"""<sound src=['\"].+?['\"]>""", re.DOTALL | re.IGNORECASE)
+re_src = re.compile(r"""src=\"(.+?)\"""", re.DOTALL | re.IGNORECASE)
+re_sound = re.compile(r"""<sound src=\".+?\">""", re.DOTALL | re.IGNORECASE)
 
 
 class MediaPreprocessor(Component):
@@ -49,7 +48,7 @@ class MediaPreprocessor(Component):
                         expand_path(filename, self.database().media_dir())):
                     fact_data[fact_key] = \
                         fact_data[fact_key].replace(match.group(),
-                        "src_missing=\"%s\"" % match.group(1))
+                        "src_missing=\"%s\"" % filename)
                     missing_media = True
                     continue
                 if not os.path.isabs(filename) and not os.path.exists(\
@@ -59,7 +58,7 @@ class MediaPreprocessor(Component):
                     directory = os.path.dirname(dest)
                     if not os.path.exists(directory):
                         os.makedirs(directory)
-                    shutil.copy(source, dest)
+                    copy(source, dest)
         if missing_media:
             tag_names.append(_("MISSING_MEDIA"))
             if not self.warned_about_missing_media:

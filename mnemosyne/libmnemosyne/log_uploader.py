@@ -5,7 +5,7 @@
 import os
 import time
 import random
-import urllib2
+import urllib.request, urllib.error, urllib.parse
 from threading import Thread
 
 from mnemosyne.libmnemosyne.translator import _
@@ -29,13 +29,12 @@ class LogUploader(Thread, Component):
         # Note: we could make the following code a lot cleaner by doing a HTTP
         # PUT, but then we need to change the server side script which would
         # cause problems with backwards compatibility.
-
         host, port = self.config()["science_server"].split(":")
         uri = '/cgi-bin/cgiupload.py'
         boundary = '%s%s_%s_%s' % \
                     ('-----', int(time.time()), os.getpid(),
                      random.randint(1, 10000))
-        f = file(filename, 'rb')
+        f = open(filename, 'rb')
         data = f.read()
         f.close()
         upload_name = str(filename.split("/")[-1].split("\\")[-1])
@@ -44,49 +43,46 @@ class LogUploader(Thread, Component):
                    ' name="file"; filename="%s"' % (upload_name))
         hdr.append('Content-Type: application/octet-stream')
         hdr.append('Content-Length: %d' % len(data))
-        part.append("%s\n\n%s" % ('\n'.join(hdr), data))
-        total.append('--%s\n' % boundary)
-        total.append(("\n--%s\n" % boundary).join(part))
-        total.append('\n--%s--\n' % boundary)
-        query = ''.join(total)
+        header = (('--%s\n' % boundary) + "\n".join(hdr) + "\n\n").encode("utf-8")
+        footer = ('\n--%s--\n' % boundary).encode("utf-8")
+        query = header + data + footer
         contentType = 'multipart/form-data; boundary=%s' % boundary
         contentLength = str(len(query))
         headers = {'Accept' : '*/*',
                    'Proxy-Connection' : 'Keep-Alive',
                    'Content-Type' : contentType,
                    'Content-Length' : contentLength}
-        req = urllib2.Request('http://' + host + ':' + port+uri, query, headers)
-        response = urllib2.urlopen(req)
+        req = urllib.request.Request('http://' + host + ':' + port+uri, query , headers)
+        response = urllib.request.urlopen(req)
         html = response.read()
 
     def run(self):
         data_dir = self.config().data_dir
         join = os.path.join
-        dir = os.listdir(unicode(join(data_dir, "history")))
         # Find out which files haven't been uploaded yet.
-        dir = os.listdir(unicode(join(data_dir, "history")))
+        dir = os.listdir(join(data_dir, "history"))
         history_files = [x for x in dir if x.endswith(".bz2")]
-        uploaded = None
-        try:
-            upload_log = file(join(data_dir, "history", "uploaded"))
+        uploaded_filename = join(data_dir, "history", "uploaded")
+        if os.path.exists(uploaded_filename):
+            upload_log = open(uploaded_filename)
             uploaded = [x.strip() for x in upload_log]
             upload_log.close()
-        except:
+        else:
             uploaded = []
         to_upload = set(history_files) - set(uploaded)
         if len(to_upload) == 0:
             return
         # Upload them to our server.
-        upload_log = file(join(data_dir, "history", "uploaded"), 'a')
+        upload_log = open(join(data_dir, "history", "uploaded"), 'a')
         try:
             for f in to_upload:
-                print _("Uploading"), f, "...",
+                print(_("Uploading"), f, "...", end=' ')
                 filename = join(data_dir, "history", f)
                 self.upload(filename)
-                print >> upload_log, f
-                print _("done!")
+                print(f, file=upload_log)
+                print(_("done!"))
         except:
-            print _("Upload failed")
-            print traceback_string()
+            print(_("Upload failed"))
+            print(traceback_string())
         upload_log.close()
 

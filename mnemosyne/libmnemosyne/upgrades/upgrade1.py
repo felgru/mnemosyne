@@ -5,7 +5,7 @@
 import os
 import sys
 import shutil
-import cPickle
+import pickle
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.utils import expand_path
@@ -25,7 +25,7 @@ class Upgrade1(Component):
         home = os.path.expanduser("~")
         if sys.platform == "darwin":
             # This is where backup_old_dir put the old data dir.
-            old_data_dir = join(unicode(home), "Library", "Mnemosyne_1")
+            old_data_dir = join(home, "Library", "Mnemosyne_1")
         else:
             try:
                 home = home.decode(locale.getdefaultlocale()[1])
@@ -33,7 +33,8 @@ class Upgrade1(Component):
                 pass
             old_data_dir = join(home, ".mnemosyne")
         # We split off the rest to a separate function for testability.
-        if os.path.exists(old_data_dir):
+        if os.path.exists(old_data_dir) and not os.path.exists(\
+            join(old_data_dir, "DIRECTORY_NO_LONGER_USED_BY_MNEMOSYNE2")):
             self.upgrade_from_old_data_dir(old_data_dir)
 
     def backup_old_dir(self):  # pragma: no cover
@@ -42,8 +43,8 @@ class Upgrade1(Component):
         # different directory anyway.
         if sys.platform == "darwin":
             home = os.path.expanduser("~")
-            old_data_dir = join(unicode(home), "Library", "Mnemosyne")
-            backup_dir = join(unicode(home), "Library", "Mnemosyne_1")
+            old_data_dir = join(home, "Library", "Mnemosyne")
+            backup_dir = join(home, "Library", "Mnemosyne_1")
             # Work around os.path.exists seeming to give wrong results on
             # OSX 10.6 (but not 10.7).
             if os.path.exists(join(old_data_dir, "default.db")):
@@ -62,20 +63,16 @@ class Upgrade1(Component):
 _("Tried to backup your old 1.x files to %s, but that directory already exists.") \
                     % (backup_dir,))
                     sys.exit()
-
+                    
     def upgrade_from_old_data_dir(self, old_data_dir):
         join = os.path.join
-        try:
-            old_data_dir = unicode(old_data_dir)
-        except:
-            old_data_dir = unicode(old_data_dir, "mbcs")
         # Warn people that this directory is no longer used.
-        file(join(old_data_dir,
+        open(join(old_data_dir,
             "DIRECTORY_NO_LONGER_USED_BY_MNEMOSYNE2"), "w").close()
         # Read old configuration.
         old_config = {}
-        config_file = file(join(old_data_dir, "config"), "rb")
-        for key, value in cPickle.load(config_file).iteritems():
+        config_file = open(join(old_data_dir, "config"), "rb")
+        for key, value in pickle.load(config_file).items():
             old_config[key] = value
         # Migrate configuration settings.
         if "user_id" in old_config:
@@ -97,11 +94,11 @@ _("Tried to backup your old 1.x files to %s, but that directory already exists."
         setting_for_file = {"dvipng": "dvipng",
                             "preamble": "latex_preamble",
                             "postamble": "latex_postamble"}
-        for filename, setting in setting_for_file.iteritems():
+        for filename, setting in setting_for_file.items():
             full_filename = join(old_data_dir, "latex", filename)
             self.config()[setting] = ""
             if os.path.exists(full_filename):
-                for line in file(full_filename):
+                for line in open(full_filename):
                     self.config()[setting] += line
         # Copy over everything that does not interfere with Mnemosyne 2.
         new_data_dir = self.config().data_dir
@@ -111,14 +108,15 @@ _("Tried to backup your old 1.x files to %s, but that directory already exists."
             ["backups", "config", "config.py", "config.pyc",
             "DIRECTORY_NO_LONGER_USED_BY_MNEMOSYNE2", "error_log.txt",
             "latex", "plugins", "log.txt", "history"] \
-            and not name.endswith(".mem")]
+            and not name.endswith(".mem") and not name is None]
         self.main_widget().set_progress_text(_("Copying files from 1.x..."))
         # By copying over the history folder and log.txt, we also completely
         # preserve the state of all the files that need to uploaded to the
         # science server.
         self.main_widget().set_progress_range(len(names) + 2)
-        shutil.copytree(join(old_data_dir, "history"),
-                        join(new_data_dir, "history"))
+        if os.path.exists(join(old_data_dir, "history")):    
+            shutil.copytree(join(old_data_dir, "history"),
+                            join(new_data_dir, "history"))
         self.main_widget().increase_progress(1)
         shutil.copyfile(join(old_data_dir, "log.txt"),
                         join(new_data_dir, "log.txt"))
@@ -129,9 +127,17 @@ _("Tried to backup your old 1.x files to %s, but that directory already exists."
         # the upgrade.
         for name in names:
             if os.path.isdir(join(old_data_dir, name)):
-                if not os.path.exists(join(new_data_dir, name)):
+                try:
                     shutil.copytree(join(old_data_dir, name),
                                     join(new_media_dir, name))
+                except OSError as e:
+                    # https://bugs.launchpad.net/mnemosyne-proj/+bug/1210435
+                    import errno
+                    if e.errno != errno.EEXIST: 
+                        raise e
+                    self.main_widget().show_information(\
+                        "Skipping copying of %s because it already exists.") \
+                        % (name, )
             else:
                 shutil.copyfile(join(old_data_dir, name),
                                 join(new_media_dir, name))

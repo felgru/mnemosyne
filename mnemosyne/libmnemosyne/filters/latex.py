@@ -11,6 +11,7 @@ except ImportError:
     from md5 import md5
 
 from mnemosyne.libmnemosyne.hook import Hook
+from mnemosyne.libmnemosyne.utils import copy
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.filter import Filter
 
@@ -66,20 +67,22 @@ class Latex(Filter):
                 os.remove("tmp1.png")
             if os.path.exists("tmp.dvi"):
                 os.remove("tmp.dvi")
-            f = file("tmp.tex", "w")
-            print >> f, self.config()["latex_preamble"]
-            print >> f, latex_command.encode("utf-8")
-            print >> f, self.config()["latex_postamble"]
+            if os.path.exists("tmp.aux"):
+                os.remove("tmp.aux")
+            f = open("tmp.tex", "w")
+            print(self.config()["latex_preamble"], file=f)
+            print(latex_command, file=f)
+            print(self.config()["latex_postamble"], file=f)
             f.close()
             os.system(self.config()["latex"] + " tmp.tex 2>&1 1>latex_out.txt")
             os.system(self.config()["dvipng"].rstrip())
             if not os.path.exists("tmp1.png"):
                 return None
-            shutil.copy("tmp1.png", img_name)
+            copy("tmp1.png", img_name)
             self.log().added_media_file(rel_filename)
             os.chdir(previous_dir)
         return rel_filename
-
+       
     def process_latex_img_tag(self, latex_command):
 
         """Transform the latex tags to image tags."""
@@ -125,9 +128,11 @@ class CheckForUpdatedLatexFiles(Hook):
     def __init__(self, component_manager):
         Hook.__init__(self, component_manager)
         self.latex = Latex(component_manager)
+        
+    def is_working(self):
+        return (os.system(self.config()["latex"] + " -version") == 0)
 
     def run(self, data):
-        # Takes 0.10 sec on 8000 card database.
         self.latex.run(data, None, None)
 
 
@@ -157,6 +162,11 @@ class LatexFilenamesFromData(Hook):
             filenames.add(self.latex.create_latex_img_file(\
                 "\\begin{displaymath}" + match.group(1) + \
                 "\\end{displaymath}"))
+        # Check if there were Latex problems.
+        if None in filenames:
+            self.main_widget().show_error(\
+                    _("Problem with latex. Are latex and dvipng installed?"))
+            filenames.remove(None)
         return filenames
 
 
@@ -189,7 +199,8 @@ class PostprocessQAClozeLatex(Hook):
     used_for = "postprocess_q_a_cloze"
 
     def run(self, question, answer):
-        if not "[" in question: # Sentence card type, recognition.
+        # Sentence card type, recognition.
+        if not "[" in question or not "]" in question:
             return question, answer
         left, rest = question.split("[", 1)
         hint, right = rest.split("]", 1)
@@ -197,10 +208,15 @@ class PostprocessQAClozeLatex(Hook):
             replace("_RIGHT_BRACKET_", "\\right]",)
         answer = answer.replace("_LEFT_BRACKET_", "\\left[",).\
             replace("_RIGHT_BRACKET_", "\\right]",)
-        if "<latex>" in left and "</latex>" in right:
+        # If we pull out a cloze from within a running math environment,
+        # add extra tags.
+        if "<latex>" in left and not "</latex>" in left and \
+            "</latex>" in right and not "<latex>" in right:
             answer = "<latex>" + answer + "</latex>"
-        elif "<$>" in left and "</$>" in right:
+        elif "<$>" in left and not "</$>" in left and \
+            "</$>" in right and not "<$>" in right:
             answer = "<$>" + answer + "</$>"
-        elif "<$$>" in left and "</$$>" in right:
+        elif "<$$>" in left and not "</$$>" in left and \
+            "</$$>" in right and not "<$$>" in right:
             answer = "<$$>" + answer + "</$$>"
         return question, answer

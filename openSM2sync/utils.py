@@ -5,15 +5,18 @@ import os
 import sys
 import math
 import random
+import locale
 import traceback
 
 class SyncError(Exception):
     pass
 
+
 class SeriousSyncError(Exception):
 
     """Requires backup from database afterwards."""
     pass
+
 
 def traceback_string():
 
@@ -26,6 +29,7 @@ def traceback_string():
     body = body + "%-20s %s" % ("".join(list[:-1]), list[-1])
     del tb  # Prevent circular references.
     return body
+
 
 def rand_uuid():
 
@@ -42,3 +46,4 @@ def rand_uuid():
     for c in range(22):
         uuid += chars[int(rand() * 62.0 - 1)]
     return uuid
+

@@ -11,31 +11,19 @@ import types
 import select
 import socket
 import tarfile
-import httplib
+import http.client
 import tempfile
 
-from cherrypy import wsgiserver
-
-from partner import Partner
-from log_entry import EventTypes
-from utils import traceback_string, rand_uuid
-from text_formats.xml_format import XMLFormat
-
-
-# Avoid delays caused by Nagle's algorithm.
-# http://www.cmlenz.net/archives/2008/03/python-httplib-performance-problems
-
-realsocket = socket.socket
-def socketwrap(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=0):
-    sockobj = realsocket(family, type, proto)
-    sockobj.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    return sockobj
-socket.socket = socketwrap
+from .partner import Partner
+from .log_entry import EventTypes
+from .text_formats.xml_format import XMLFormat
+from .utils import traceback_string, rand_uuid
+import collections
 
 
 # Register binary formats.
 
-from binary_formats.mnemosyne_format import MnemosyneFormat
+from .binary_formats.mnemosyne_format import MnemosyneFormat
 BinaryFormats = [MnemosyneFormat]
 
 
@@ -76,8 +64,9 @@ class Session(object):
     def terminate(self):
 
         """Restore from backup if the session failed to close normally."""
-
-        self.database.restore(self.backup_file)
+        
+        if self.backup_file:
+            self.database.restore(self.backup_file)
 
 
 # When Cherrypy wants to stream a binary file using chunked transfer encoding,
@@ -106,6 +95,7 @@ class Server(Partner):
         self.machine_id = machine_id
         # We only use 1 thread, such that subsequent requests don't run into
         # SQLite access problems.
+        from cherrypy import wsgiserver
         self.wsgi_server = wsgiserver.CherryPyWSGIServer\
             (("0.0.0.0", port), self.wsgi_app, server_name="localhost",
             numthreads=1, timeout=1000)
@@ -140,7 +130,7 @@ class Server(Partner):
         if mnemosyne_content_length is not None:
             response_headers.append(\
                 ("mnemosyne-content-length", str(mnemosyne_content_length)))
-        if type(data) == types.StringType:
+        if type(data) == bytes or type(data) == str:
             response_headers.append(("content-length", str(len(data))))
             start_response("200 OK", response_headers)
             return [data]
@@ -150,7 +140,7 @@ class Server(Partner):
         # beforehand. This obviously results in higher memory requirements for
         # the server and less concurrent processing between client and server.
             if environ["SERVER_PROTOCOL"] == "HTTP/1.0":
-                message = "".join(data)
+                message = b"".join(data)
                 response_headers.append(("content-length", str(len(message))))
                 start_response("200 OK", response_headers)
                 return [message]
@@ -163,7 +153,7 @@ class Server(Partner):
         method = (environ["REQUEST_METHOD"] + \
                   environ["PATH_INFO"].replace("/", "_")).lower()
         args = cgi.parse_qs(environ["QUERY_STRING"])
-        args = dict([(key, val[0]) for key, val in args.iteritems()])
+        args = dict([(key, val[0]) for key, val in list(args.items())])
         # Login method.
         if method == "put_login" or method == "get_status":
             if len(args) == 0:
@@ -175,12 +165,12 @@ class Server(Partner):
             not in self.sessions:
             return "403 Forbidden", None, None
         # See if the method exists.
-        if hasattr(self, method) and callable(getattr(self, method)):
+        if hasattr(self, method) and isinstance(getattr(self, method), collections.Callable):
             return "200 OK", method, args
         else:
             return "404 Not Found", None, None
 
-    # The following functions are not yet thread-safe.
+    # The following functions are not yet thread-safe.  
 
     def create_session(self, client_info):
         database = self.load_database(client_info["database_name"])
@@ -224,7 +214,7 @@ class Server(Partner):
             "The next sync will need to be a full sync.")
 
     def is_sync_in_progress(self):
-        for session_token, session in self.sessions.iteritems():
+        for session_token, session in self.sessions.items():
             if not session.is_expired():
                 return True
         return False
@@ -236,7 +226,7 @@ class Server(Partner):
         return (len(self.sessions) == 0)
 
     def expire_old_sessions(self):
-        for session_token, session in self.sessions.iteritems():
+        for session_token, session in self.sessions.items():
             if session.is_expired():
                 self.terminate_session_with_token(session_token)
 
@@ -320,8 +310,13 @@ class Server(Partner):
                 client_info_repr)
             if not self.authorise(client_info["username"],
                 client_info["password"]):
+                self.ui.close_progress()
                 return self.text_format.repr_message("Access denied")
             # Close old session waiting in vain for client input.
+            # This will also close any session which timed out while
+            # trying to log in just before, so we need to make sure the
+            # client timeout is long enough for e.g. a NAS which is slow to
+            # wake from hibernation.
             old_running_session_token = self.session_token_for_user.\
                 get(client_info["username"])
             if old_running_session_token:
@@ -344,11 +339,13 @@ class Server(Partner):
                (client_in_server_partners and not server_in_client_partners):
                 if not session.client_info["is_database_empty"]:
                     self.terminate_session_with_token(session.token)
+                    self.ui.close_progress()
                     return self.text_format.repr_message("Sync cycle detected")
             # Detect the case where a user has copied the entire mnemosyne
             # directory before syncing.
             if session.client_info["machine_id"] == self.machine_id:
                 self.terminate_session_with_token(session.token)
+                self.ui.close_progress()
                 return self.text_format.repr_message("same machine ids")
             # Create partnerships.
             session.database.create_if_needed_partnership_with(\
@@ -374,15 +371,6 @@ class Server(Partner):
             # Add optional program-specific information.
             server_info = \
                 session.database.append_to_sync_partner_info(server_info)
-            # We check if files were updated outside of the program, or if
-            # media files need to be generated dynamically, e.g. latex. This
-            # can generate MEDIA_EDITED log entries, so it should be done
-            # first.
-            if self.check_for_edited_local_media_files:
-                self.ui.set_progress_text("Checking for edited media files...")
-                session.database.check_for_edited_media_files()
-            self.ui.set_progress_text("Dynamically creating media files...")
-            session.database.dynamically_create_media_files()
             return self.text_format.repr_partner_info(server_info)\
                    .encode("utf-8")
         except:
@@ -395,13 +383,29 @@ class Server(Partner):
             # the lowest level, and not in e.g. 'wsgi_app'.
             return self.handle_error(session, traceback_string())
 
+    def get_server_check_media_files(self, environ, session_token):
+        # We check if files were updated outside of the program, or if
+        # media files need to be generated dynamically, e.g. latex. This
+        # can generate MEDIA_EDITED log entries, so it should be done first.
+        try:
+            session = self.sessions[session_token]
+            if self.check_for_edited_local_media_files:
+                self.ui.set_progress_text("Checking for edited media files...")
+                session.database.check_for_edited_media_files()
+            # Always create media files, otherwise they are not synced across.
+            self.ui.set_progress_text("Dynamically creating media files...")
+            session.database.dynamically_create_media_files()
+            return self.text_format.repr_message("OK")
+        except:
+            return self.handle_error(session, traceback_string())
+
     def put_client_log_entries(self, environ, session_token):
         try:
             session = self.sessions[session_token]
             self.ui.set_progress_text("Receiving log entries...")
             socket = environ["wsgi.input"]
             element_loop = self.text_format.parse_log_entries(socket)
-            session.number_of_client_entries = int(element_loop.next())
+            session.number_of_client_entries = int(next(element_loop))
             if session.number_of_client_entries == 0:
                 return self.text_format.repr_message("OK")
             self.ui.set_progress_range(session.number_of_client_entries)
@@ -545,17 +549,26 @@ class Server(Partner):
         except:
             return self.handle_error(session, traceback_string())
 
-    def put_client_media_file(self, environ, session_token, filename):
+    def get_server_generate_log_entries_for_settings(\
+            self, environ, session_token):
+        try:
+            session = self.sessions[session_token]
+            session.database.generate_log_entries_for_settings()
+            return self.text_format.repr_message("OK")
+        except:
+            return self.handle_error(session, traceback_string())
+
+    def put_client_binary_file(self, environ, session_token, filename):
         try:
             session = self.sessions[session_token]
             socket = environ["wsgi.input"]
             size = int(environ["CONTENT_LENGTH"])
-            filename = unicode(filename, "utf-8")
             # Make sure a malicious client cannot overwrite anything outside
             # of the media directory.
-            filename = filename.replace("..", "")
-            filename = os.path.join(session.database.media_dir(), filename)
-            # We don't have progress bars here, as 'put_client_media_file'
+            filename = filename.replace("../", "").replace("..\\", "")
+            filename = filename.replace("/..", "").replace("\\..", "")            
+            filename = os.path.join(session.database.data_dir(), filename)
+            # We don't have progress bars here, as 'put_client_binary_file'
             # gets called too frequently, and this would slow down the UI.
             self.download_binary_file(environ["wsgi.input"], filename, size,
                 progress_bar=False)
@@ -570,30 +583,58 @@ class Server(Partner):
             global mnemosyne_content_length
             mnemosyne_content_length = 0
             self.ui.set_progress_text("Sending media files...")
+            # Send list of filenames in the format <mediadir>/<filename>, i.e.
+            # relative to the data_dir. Note we always use / internally.           
+            subdir = os.path.basename(session.database.media_dir())
             if redownload_all in ["1", "True", "true"]:
-                filenames = list(session.database.all_media_filenames())
+                filenames = [subdir + "/" + filename for filename in \
+                             session.database.all_media_filenames()]                
             else:
-                filenames = list(session.database.media_filenames_to_sync_for(\
-                    session.client_info["machine_id"]))
+                filenames = [subdir + "/" + filename  for filename in \
+                             session.database.media_filenames_to_sync_for(\
+                                 session.client_info["machine_id"])]                 
             if len(filenames) == 0:
                 return ""
             for filename in filenames:
-                mnemosyne_content_length += os.path.getsize(\
-                    os.path.join(session.database.media_dir(), filename))
+                mnemosyne_content_length += os.path.getsize((os.path.join(\
+                        session.database.data_dir(), filename)))
             return "\n".join(filenames).encode("utf-8")
         except:
             return self.handle_error(session, traceback_string())
 
-    def get_server_media_file(self, environ, session_token, filename):
+    def get_server_archive_filenames(self, environ, session_token):
+        try:
+            session = self.sessions[session_token]
+            global mnemosyne_content_length
+            mnemosyne_content_length = 0
+            self.ui.set_progress_text("Sending archive files...")
+            # Send list of filenames in the format "archive"/<filename>, i.e.
+            # relative to the data_dir. Note we always use / internally.       
+            archive_dir = os.path.join(session.database.data_dir(), "archive")
+            if not os.path.exists(archive_dir):
+                return ""
+            filenames = ["archive/" + filename for filename in \
+                         os.listdir(archive_dir) if os.path.isfile\
+                         (os.path.join(archive_dir, filename))]            
+            if len(filenames) == 0:
+                return ""
+            for filename in filenames:
+                mnemosyne_content_length += os.path.getsize(os.path.join(\
+                        session.database.data_dir(), filename))
+            return "\n".join(filenames).encode("utf-8")
+        except:
+            return self.handle_error(session, traceback_string())
+
+    def get_server_binary_file(self, environ, session_token, filename):
         try:
             session = self.sessions[session_token]
             global mnemosyne_content_length
             socket = environ["wsgi.input"]
-            filename = unicode(filename, "utf-8")
             # Make sure a malicious client cannot access anything outside
             # of the media directory.
-            filename = filename.replace("..", "")
-            filename = os.path.join(session.database.media_dir(), filename)
+            filename = filename.replace("../", "").replace("..\\", "")
+            filename = filename.replace("/..", "").replace("\\..", "")
+            filename = os.path.join(session.database.data_dir(), filename)
             file_size = os.path.getsize(filename)
             mnemosyne_content_length = file_size
             # Since we want to modify the headers in this function, we cannot
@@ -619,11 +660,14 @@ class Server(Partner):
     def get_sync_cancel(self, environ, session_token):
         try:
             self.ui.set_progress_text("Sync cancelled!")
-            self.cancel_session_with_token(session_token)
+            if session_token != "none":
+                self.cancel_session_with_token(session_token)
+            self.ui.close_progress()
             return self.text_format.repr_message("OK")
         except:
-            session = self.sessions[session_token]
-            return self.handle_error(session, traceback_string())
+            if session_token != "none":
+                session = self.sessions[session_token]
+                return self.handle_error(session, traceback_string())
 
     def get_sync_finish(self, environ, session_token):
         try:

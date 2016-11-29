@@ -1,14 +1,14 @@
-#se
+#
 # SQLite.py - Ed Bartosh <bartosh@gmail.com>, <Peter.Bienstman@UGent.be>
 #
 
 import os
 import sys
 import time
-import copy
 import string
 import shutil
 import datetime
+import copy as objcopy
 
 from openSM2sync.log_entry import EventTypes
 
@@ -19,9 +19,10 @@ from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.database import Database
 from mnemosyne.libmnemosyne.card_type import CardType
 from mnemosyne.libmnemosyne.fact_view import FactView
-from mnemosyne.libmnemosyne.utils import traceback_string
-from mnemosyne.libmnemosyne.utils import numeric_string_cmp, mangle
+from mnemosyne.libmnemosyne.utils import traceback_string, copy
 from mnemosyne.libmnemosyne.utils import expand_path, contract_path
+from mnemosyne.libmnemosyne.utils import numeric_string_cmp_key, mangle
+
 
 # All ids beginning with an underscore refer to primary keys in the SQL
 # database. All other id's correspond to the id's used in libmnemosyne.
@@ -220,7 +221,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
 
     """
 
-    version = "Mnemosyne SQL 1.0"
+    version = "2"
     suffix = ".db"
     store_pregenerated_data = True
 
@@ -237,8 +238,9 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         # effects from generating log events while syncing.
         self.syncing = False
         # For importing from a mnemosyne2 cards file, we need different side
-        # effect to be disabled/enabled.
+        # effects to be disabled/enabled.
         self.importing = False
+        self.importing_with_learning_data = False
 
     #
     # File operations.
@@ -270,6 +272,9 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
 
     def path(self):
         return self._path
+    
+    def data_dir(self):
+        return os.path.dirname(self._path)    
 
     def name(self):
         return os.path.basename(self._path)
@@ -281,8 +286,22 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             return os.path.basename(self._path).\
                 split(self.database().suffix)[0]
 
-    def compact(self):
+    def defragment(self):
+        self.main_widget().set_progress_text(_("Defragmenting database..."))
         self.con.execute("vacuum")
+        # Make sure the "Untagged" tag does not show up together with
+        # different tags.
+        untagged = self.tag("__UNTAGGED__", is_id_internal=False)
+        for cursor in self.con.execute("select _id from cards"):
+            _card_id = cursor[0]
+            _tag_ids = [cursor2[0] for cursor2 in self.con.execute(\
+                "select _tag_id from tags_for_card where _card_id=?",
+                (_card_id, ))]
+            if len(_tag_ids) > 1 and untagged._id in _tag_ids:
+                self.con.execute(\
+                    "delete from tags_for_card where _card_id=? and _tag_id=?",
+                    (_card_id, untagged._id))
+        self.main_widget().close_progress()
 
     def new(self, path):
         self.unload()
@@ -313,73 +332,54 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         self._current_criterion = DefaultCriterion(self.component_manager)
         self._current_criterion._id = 1
         self._current_criterion.id = "__DEFAULT__"
-        self._current_criterion.name = "__DEFAULT__"
+        self._current_criterion.name = self.default_criterion_name
         self._current_criterion._tag_ids_active.add(tag._id)
         self.add_criterion(self._current_criterion)
-
-    def _activate_plugin_for_card_type(self, card_type_id):
-        found = False
-        for plugin in self.plugins():
-            for component in plugin.components:
-                if component.component_type == "card_type" and \
-                    component.id == card_type_id:
-                    found = True
-                    try:
-                        plugin.activate()
-                    except:
-                        raise RuntimeError, _("Error when running plugin:") \
-                            + "\n" + traceback_string()
-        if not found:
-            raise RuntimeError, _("Missing plugin for card type with id:") \
-                + " " + card_type_id
 
     def load(self, path):
         if self.is_loaded():
             self.unload()
         self._path = expand_path(path, self.config().data_dir)
+        if not os.path.exists(self._path):
+            return self.new(path)
         # Check database version.
         try:
             sql_res = self.con.execute("""select value from global_variables
                 where key=?""", ("version", )).fetchone()
         except:
-            raise RuntimeError, _("Unable to load file.") + traceback_string()
+            raise RuntimeError(_("Unable to load file at") + " " + self._path)
         if sql_res is None:
-            raise RuntimeError, _("Unable to load file, query failed.")
+            raise RuntimeError(_("Unable to load file, query failed."))
         if sql_res[0] != self.version:
-            raise RuntimeError, \
-                _("Unable to load file: database version mismatch.")
+            if sql_res[0] == "Mnemosyne SQL 1.0":
+                previous_version = 1
+            else:
+                previous_version = int(sql_res[0])
+            try:
+                if previous_version <= 2:
+                    from mnemosyne.libmnemosyne.upgrades.upgrade2 \
+                        import Upgrade2
+                    Upgrade2(self.component_manager).run()
+            except:
+                raise RuntimeError(_("Database upgrade failed."))
         self.create_media_dir_if_needed()
         # Upgrade.
         self.con.execute("""create index if not exists
             i_cards_3 on cards (_fact_id);""")
-        # Identify missing plugins for card types and their parents.
-        plugin_needed_ids = set()
-        builtin_ids = set(card_type.id for card_type in self.card_types())
+        # Activate all the plugins needed for all the card types.
         # Sometimes corruption keeps the global_variables table intact,
         # but not the cards table...
         try:
             used_ids = [cursor[0] for cursor in \
                 self.con.execute("select distinct card_type_id from cards")]
         except:
-            raise RuntimeError, _("Unable to load file.") + traceback_string()
+            raise RuntimeError(_("Unable to load file.") + traceback_string())
+        # We also need to do this for the card types which are only defined
+        # and have no cards yet.
         defined_in_database_ids = [cursor[0] for cursor in \
             self.con.execute("select id from card_types")]
-        # Check if parents are missing plugins. We also need to do this for the
-        # defined ids, in case a card type has no cards.
         for id in used_ids + defined_in_database_ids:
-            while "::" in id: # Move up one level of the hierarchy.
-                id, child_name = id.rsplit("::", 1)
-                if id not in builtin_ids and id not in defined_in_database_ids:
-                    plugin_needed_ids.add(id)
-            if id not in builtin_ids and id not in defined_in_database_ids:
-                plugin_needed_ids.add(id)
-        for card_type_id in plugin_needed_ids:
-            try:
-                self._activate_plugin_for_card_type(card_type_id)
-            except RuntimeError, exception:
-                self._connection.close()
-                self._connection = None
-                raise exception
+            self.activate_plugins_for_card_type_with_id(id) 
         # Instantiate card types stored in this database. Since they could
         # depend on a plugin, the card types need to be instatiated last.
         for id in defined_in_database_ids:
@@ -392,7 +392,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         for f in self.component_manager.all("hook", "after_load"):
             f.run()
         # We don't log the database load here, but in libmnemosyne.__init__,
-        # as we prefer to log the start of the program first.
+        # as we prefer to log the start of the program first.                          
 
     def save(self, path=None):
         # Update format.
@@ -404,7 +404,12 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             return
         dest_path = expand_path(path, self.config().data_dir)
         if dest_path != self._path:
-            shutil.copy(self._path, dest_path)
+            if sys.platform == "win32":  # pragma: no cover
+                drive = os.path.splitdrive(path)[0]
+                import ctypes
+                if ctypes.windll.kernel32.GetDriveTypeW("%s\\" % drive) == 4:
+                    raise RuntimeError(_("Putting a database on a network drive is forbidden under Windows to avoid data corruption."))
+            copy(self._path, dest_path)
             self._path = dest_path
         self.config()["last_database"] \
             = contract_path(path, self.config().data_dir)
@@ -422,19 +427,20 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         backupfile = os.path.join(backupdir, backupfile)
         failed = False
         try:
-            shutil.copy(self._path, backupfile)
+            copy(self._path, backupfile)
         except:
             failed = True
         if failed or not os.path.exists(backupfile) or \
           not os.stat(backupfile).st_size:
             self.main_widget().show_information(\
                 _("Warning: backup creation failed for") + " " +  backupfile)
+            return None
         for f in self.component_manager.all("hook", "after_backup"):
             f.run(backupfile)
         # Only keep the last logs.
         if self.config()["backups_to_keep"] < 0:
             return backupfile
-        files = [f for f in os.listdir(unicode(backupdir)) \
+        files = [f for f in os.listdir(backupdir) \
                 if f.startswith(db_name + "-")]
         files.sort()
         if len(files) > self.config()["backups_to_keep"]:
@@ -447,7 +453,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         self.abandon()
         db_path = expand_path(\
             self.config()["last_database"], self.config().data_dir)
-        shutil.copy(path, db_path)
+        copy(path, db_path)
         self.load(db_path)
         # We need to indicate that a full sync needs to happen on the next
         # sync. Unfortunately, we can't do anything about the logs that have
@@ -471,7 +477,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             self.log().dump_to_science_log()
             self.backup()  # Saves too.
             self._connection.close()
-        except Exception, e:
+        except Exception as e:
             pass
         finally:
             self._connection = None
@@ -526,6 +532,8 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
 
     def get_or_create_tag_with_name(self, name):
         name = name.strip()
+        if name.startswith("::"):
+            name = name[2:]
         sql_res = self.con.execute("""select _id, id, name, extra_data from
             tags where name=?""", (name, )).fetchone()
         if sql_res:
@@ -546,6 +554,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         return tags
 
     def add_tag(self, tag):
+        tag.name = tag.name.replace(",", " - ")
         self.con.execute("""insert into tags(name, extra_data, id)
             values(?,?,?)""", (tag.name,
             self._repr_extra_data(tag.extra_data), tag.id))
@@ -573,7 +582,9 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         # tag except when a parent is inactive.
         if not saved_criterion:
             criteria_to_activate_tag_in = [current_criterion]
-            existing_tag_for_name = {tag.name : tag for tag in self.tags()}
+            existing_tag_for_name = {}
+            for _tag in self.tags():
+                existing_tag_for_name[_tag.name] = _tag
             partial_tag_name = ""
             for node in tag.name.split("::"):
                 partial_tag_name += node
@@ -586,9 +597,13 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
                 partial_tag_name += "::"
         # If there is a saved criterion active, we ask the user what to do.
         else:
-            answer = self.main_widget().show_question(\
-                _("Make tag '%s' active in saved set '%s'?") % \
-                (tag.name, saved_criterion.name), _("Yes"), _("No"), "")
+            try:
+                answer = self.main_widget().show_question(\
+                    _("Make tag '%s' active in saved set '%s'?") % \
+                    (tag.name, saved_criterion.name), _("Yes"), _("No"), "")
+            except NotImplementedError: 
+                # We are running in a non interactive mode.
+                answer = 0  # Yes
             if answer == 1:  # No.
                 criteria_to_activate_tag_in = []
             else:
@@ -676,7 +691,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
                     (cursor[0], )).fetchone()[0]
                 if tag_name != "__UNTAGGED__":
                     tag_names.append(tag_name)
-            sorted_tag_names = sorted(tag_names, cmp=numeric_string_cmp)
+            sorted_tag_names = sorted(tag_names, key=numeric_string_cmp_key)
             tag_string = ", ".join(sorted_tag_names)
             self.con.execute("update cards set tags=? where _id=?",
                 (tag_string, _card_id))
@@ -734,7 +749,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
 
         result = [self.tag(cursor[0], is_id_internal=True) for cursor in \
             self.con.execute("select _id from tags")]
-        result.sort(key=lambda x: x.name, cmp=numeric_string_cmp)
+        result.sort(key=lambda x: numeric_string_cmp_key(x.name))
         index = 0
         # __UNTAGGED__ is typically at the head of the list, apart when tags
         # start with numbers.
@@ -745,6 +760,10 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
                 break
             index += 1
         return result
+    
+    def has_tag_with_id(self, id):
+        return self.con.execute("select count() from tags where id=?",
+            (id, )).fetchone()[0] != 0
 
     #
     # Facts.
@@ -796,6 +815,10 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             (fact._id, ))
         self.log().deleted_fact(fact)
         del fact
+        
+    def has_fact_with_id(self, id):
+        return self.con.execute("select count() from facts where id=?",
+            (id, )).fetchone()[0] != 0        
 
     #
     # Cards.
@@ -844,6 +867,9 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             sql_res = self.con.execute(query + "_id=?", (id, )).fetchone()
         else:
             sql_res = self.con.execute(query + "id=?", (id, )).fetchone()
+        if sql_res is None or sql_res[3] is None:
+            from mnemosyne.libmnemosyne.utils import MnemosyneError
+            raise MnemosyneError
         fact = self.fact(sql_res[3], is_id_internal=True)
         # Note that for the card type, we turn to the component manager as
         # opposed to this database, as we would otherwise miss the built-in
@@ -915,9 +941,14 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
                 _card_id) values(?,?)""", (tag._id, card._id))
 
     def delete_card(self, card, check_for_unused_tags=True):
-        self.con.execute("delete from cards where _id=?", (card._id, ))
-        self.con.execute("delete from tags_for_card where _card_id=?",
-            (card._id, ))
+        if card._id is None: 
+            # A card which was created and deleted before a sync, so that
+            # it has incomplete information.
+            self.con.execute("delete from cards where id=?", (card.id, ))
+        else:
+            self.con.execute("delete from cards where _id=?", (card._id, ))
+            self.con.execute("delete from tags_for_card where _card_id=?",
+                             (card._id, ))
         if not self.syncing and check_for_unused_tags:
             for tag in card.tags:
                 self.delete_tag_if_unused(tag)
@@ -966,6 +997,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
                 (EventTypes.EDITED_CARD, int(time.time()), card_id))
 
     def remove_tag_from_cards_with_internal_ids(self, tag, _card_ids):
+        # Delete tags.
         arguments = ((tag._id, _card_id) for _card_id in _card_ids)
         self.con.executemany("""delete from tags_for_card where _tag_id=?
             and _card_id=?""", arguments)
@@ -991,6 +1023,10 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
                 object_id) values(?,?,?)""",
                 (EventTypes.EDITED_CARD, int(time.time()), card_id))
 
+    def has_card_with_id(self, id):
+        return self.con.execute("select count() from cards where id=?",
+            (id, )).fetchone()[0] != 0 
+    
     #
     # Fact views.
     #
@@ -1041,10 +1077,41 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             (fact_view.id, ))
         self.log().deleted_fact_view(fact_view)
         del fact_view
+        
+    def has_fact_view_with_id(self, id):
+        return self.con.execute("select count() from fact_views where id=?",
+            (id, )).fetchone()[0] != 0         
 
     #
     # Card types.
     #
+    
+    def activate_plugins_for_card_type_with_id(self, id):
+        builtin_ids = set(card_type.id for card_type in self.card_types())
+        defined_in_database_ids = [cursor[0] for cursor in \
+            self.con.execute("select id from card_types")]        
+        # Check if parents are missing plugins.
+        plugin_needed_ids = set()
+        while "::" in id: # Move up one level of the hierarchy.
+            id, child_name = id.rsplit("::", 1)
+            if id not in builtin_ids and id not in defined_in_database_ids:
+                plugin_needed_ids.add(id)
+        if id not in builtin_ids and id not in defined_in_database_ids:
+            plugin_needed_ids.add(id)
+        for card_type_id in plugin_needed_ids:
+            found = False
+            for plugin in self.plugins():
+                for component in plugin.components:
+                    if component.component_type == "card_type" and \
+                        component.id == card_type_id:
+                        found = True
+                        try:
+                            plugin.activate()
+                        except:
+                            raise RuntimeError(_("Error when running plugin:") \
+                                + "\n" + traceback_string())
+            if not found:
+                raise RuntimeError(_("Missing plugin for card type with id:") + " " + card_type_id)      
 
     def add_card_type(self, card_type):
         self.con.execute("""insert into card_types(id, name,
@@ -1057,6 +1124,9 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             repr([fact_view.id for fact_view in card_type.fact_views]),
             repr(card_type.keyboard_shortcuts),
             self._repr_extra_data(card_type.extra_data)))
+        # When we are syncing/merging, make sure we correctly insert the
+        # class in the inheritance hierarchy.
+        card_type = self.card_type(card_type.id, is_id_internal=False)
         self.component_manager.register(card_type)
         self.log().added_card_type(card_type)
         # When syncing (but not when importing), don't bother to check for
@@ -1162,7 +1232,14 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             criterion.card_type_deleted(card_type)
             self.update_criterion(criterion)
         del card_type
-
+        
+    def has_card_type_with_id(self, id):
+        #if self.con.execute("select count() from card_types where id=?",
+        #    (id, )).fetchone()[0] != 0:
+        #    return True
+        #else: # It could be a built-in card type.
+        return id in [card_type.id for card_type in self.card_types()]
+    
     #
     # Criteria.
     #
@@ -1208,10 +1285,9 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         del criterion
 
     def set_current_criterion(self, criterion):
-        criterion = copy.copy(criterion)
+        criterion = objcopy.copy(criterion)
         criterion._id = 1
         criterion.id = "__DEFAULT__"
-        criterion.name = "__DEFAULT__"
         self.update_criterion(criterion)
         applier = self.component_manager.current("criterion_applier",
             used_for=criterion.__class__)
@@ -1223,6 +1299,11 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
     def criteria(self):
         return (self.criterion(cursor[0], is_id_internal=True) \
             for cursor in self.con.execute("select _id from criteria"))
+    
+    def has_criterion_with_id(self, id):
+        return self.con.execute("select count() from criteria where id=?",
+            (id, )).fetchone()[0] != 0 
+    
 
     #
     # Queries.
@@ -1348,7 +1429,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         card_type_2 = self.card_type_with_id("2")
         _fact_ids_dealt_with = []
         for key in set(_fact_id_for_front.keys()).\
-            intersection(_fact_id_for_back.keys()):
+            intersection(list(_fact_id_for_back.keys())):
             _fact_id_1 = _fact_id_for_front[key]
             _fact_id_2 = _fact_id_for_back[key]
             # Deal only once with a pair.

@@ -5,6 +5,7 @@
 
 from mnemosyne.libmnemosyne.component import Component
 
+_ = None
 
 class Translator(Component):
 
@@ -85,7 +86,8 @@ language_name_for_iso6931_code = {
     "bo": "Tibetan",
     "br": "Breton",
     "bs": "Bosnian",
-    "ca": "Catalan, Valencian",
+    "ca": "Catalan",
+    "ca@valencia": "Catalan (Valencian)",
     "ce": "Chechen",
     "ch": "Chamorro",
     "co": "Corsican",
@@ -99,10 +101,10 @@ language_name_for_iso6931_code = {
     "dv": "Divehi, Dhivehi, Maldivian",
     "dz": "Dzongkha",
     "ee": "Ewe",
-    "el": "Modern Greek (1453\xe2\x80\x93)".decode("utf-8"),
+    "el": "Modern Greek (1453-)",
     "en": "English",
     "eo": "Esperanto",
-    "es": "Spanish, Castilian",
+    "es": "Spanish (Castilian)",
     "et": "Estonian",
     "eu": "Basque",
     "fa": "Persian",
@@ -165,7 +167,7 @@ language_name_for_iso6931_code = {
     "lv": "Latvian",
     "mg": "Malagasy",
     "mh": "Marshallese",
-    "mi": "M\xc4\x81ori".decode("utf-8"),
+    "mi": "M\u0100ori",
     "mk": "Macedonian",
     "ml": "Malayalam",
     "mn": "Mongolian",
@@ -174,18 +176,18 @@ language_name_for_iso6931_code = {
     "mt": "Maltese",
     "my": "Burmese",
     "na": "Nauruan",
-    "nb": "Norwegian Bokm\xc3\xa5l".decode("utf-8"),
-    "nb_no": "Norwegian Bokm\xc3\xa5l".decode("utf-8"),
+    "nb": u"Norwegian",
+    "nb_NO": "Norwegian Bokm\u00e5l",
     "nd": "Northern Ndebele",
     "ne": "Nepali",
     "ng": "Ndonga",
-    "nl": "Dutch, Flemish",
+    "nl": "Dutch",
     "nn": "Norwegian Nynorsk",
     "no": "Norwegian",
     "nr": "Southern Ndebele",
     "nv": "Navajo, Navaho",
     "ny": "Chichewa, Chewa, Nyanja",
-    "oc": "Occitan (1500\xe2\x80\x93)".decode("utf-8"),
+    "oc": "Occitan (1500-)",
     "oj": "Ojibwa",
     "om": "Oromo",
     "or": "Oriya",
@@ -240,7 +242,7 @@ language_name_for_iso6931_code = {
     "uz": "Uzbek",
     "ve": "Venda",
     "vi": "Vietnamese",
-    "vo": "Volap\xc3\xbck".decode("utf-8"),
+    "vo": "Volap\u00FCck",
     "wa": "Walloon",
     "wo": "Wolof",
     "xh": "Xhosa",
@@ -258,4 +260,4 @@ language_name_for_iso6931_code = {
 
 def iso6931_code_for_language_name(language):
     return dict((v,k) for k, v in \
-        language_name_for_iso6931_code.iteritems())[language]
+        language_name_for_iso6931_code.items())[language]

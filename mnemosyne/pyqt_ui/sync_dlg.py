@@ -4,7 +4,7 @@
 
 import sys
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.ui_sync_dlg import Ui_SyncDlg
@@ -31,19 +31,18 @@ class SyncThread(QtCore.QThread):
 
     """
 
-    information_signal = QtCore.pyqtSignal(QtCore.QString)
-    error_signal = QtCore.pyqtSignal(QtCore.QString)
-    question_signal = QtCore.pyqtSignal(QtCore.QString, QtCore.QString,
-        QtCore.QString, QtCore.QString)
-    set_progress_text_signal = QtCore.pyqtSignal(QtCore.QString)
+    information_signal = QtCore.pyqtSignal(str)
+    error_signal = QtCore.pyqtSignal(str)
+    question_signal = QtCore.pyqtSignal(str, str, str, str)
+    set_progress_text_signal = QtCore.pyqtSignal(str)
     set_progress_range_signal = QtCore.pyqtSignal(int)
     set_progress_update_interval_signal = QtCore.pyqtSignal(int)
     increase_progress_signal = QtCore.pyqtSignal(int)
     set_progress_value_signal = QtCore.pyqtSignal(int)
     close_progress_signal = QtCore.pyqtSignal()
 
-    def __init__(self, mnemosyne, server, port, username, password):
-        QtCore.QThread.__init__(self)
+    def __init__(self, mnemosyne, server, port, username, password, **kwds):
+        super().__init__(**kwds)
         self.mnemosyne = mnemosyne
         self.server = server
         self.port = port
@@ -117,11 +116,10 @@ class SyncThread(QtCore.QThread):
         self.close_progress_signal.emit()
 
 
-class SyncDlg(QtGui.QDialog, Ui_SyncDlg, SyncDialog):
+class SyncDlg(QtWidgets.QDialog, SyncDialog, Ui_SyncDlg):
 
-    def __init__(self, component_manager):
-        SyncDialog.__init__(self, component_manager)
-        QtGui.QDialog.__init__(self, self.main_widget())
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
         self.setupUi(self)
         self.setWindowFlags(self.windowFlags() \
             | QtCore.Qt.WindowMinMaxButtonsHint)
@@ -149,10 +147,10 @@ class SyncDlg(QtGui.QDialog, Ui_SyncDlg, SyncDialog):
 
     def accept(self):
         # Store input for later use.
-        server = unicode(self.server.text())
+        server = self.server.text()
         port = self.port.value()
-        username = unicode(self.username.text())
-        password = unicode(self.password.text())
+        username = self.username.text()
+        password = self.password.text()
         self.config()["server_for_sync_as_client"] = server
         self.config()["port_for_sync_as_client"] = port
         self.config()["username_for_sync_as_client"] = username
@@ -189,10 +187,10 @@ class SyncDlg(QtGui.QDialog, Ui_SyncDlg, SyncDialog):
 
     def reject(self):
         if self.can_reject:
-            QtGui.QDialog.reject(self)
+            QtWidgets.QDialog.reject(self)
 
     def finish_sync(self):
-        QtGui.QDialog.accept(self)
+        QtWidgets.QDialog.accept(self)
 
     def threaded_show_information(self, message):
         global answer

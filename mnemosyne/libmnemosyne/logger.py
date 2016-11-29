@@ -152,8 +152,7 @@ class Logger(Component):
 
         """
 
-        _dir = os.listdir(unicode(\
-            os.path.join(self.config().data_dir, "history")))
+        _dir = os.listdir(os.path.join(self.config().data_dir, "history"))
         history_files = [x for x in _dir if x[-4:] == ".bz2"]
         max_log_index = 0
         this_machine_id = self.config().machine_id()
@@ -186,16 +185,16 @@ class Logger(Component):
             index = self.log_index_of_last_upload() + 1
             archive_name = "%s_%s_%05d.bz2" % (user, machine, index)
             import bz2  # Not all platforms have bz.
-            f = bz2.BZ2File(os.path.join(data_dir, "history",
+            f = bz2.open(os.path.join(data_dir, "history",
                 archive_name), "w")
-            for l in file(log_name):
-                f.write(l)
+            for l in open(log_name):
+                f.write(l.encode("utf-8"))
             f.close()
             os.remove(log_name)
 
     def deactivate(self):
         if self.upload_thread:
             from mnemosyne.libmnemosyne.translator import _
-            print _("Waiting for uploader thread to stop...").encode("utf-8")
+            print((_("Waiting for uploader thread to stop...").encode("utf-8")))
             self.upload_thread.join()
-            print _("Done!").encode("utf-8")
+            print((_("Done!").encode("utf-8")))
