@@ -44,7 +44,8 @@ class Component(object):
 
     instantiate = IMMEDIATELY
 
-    def __init__(self, component_manager):
+    def __init__(self, component_manager, **kwds):
+        super().__init__(**kwds)        
         self.component_manager = component_manager
 
     def activate(self):
@@ -127,9 +128,14 @@ class Component(object):
         change the database (e.g. adding a card). Otherwise, if these
         sessions close later during program shutdown, their backup
         restoration will override the changes.
+        
+        Also stop any running media.
 
         """
 
         server = self.component_manager.current("sync_server")
         if server:
             server.flush()
+        review_widget = self.review_widget()
+        if review_widget:
+            review_widget.stop_media()

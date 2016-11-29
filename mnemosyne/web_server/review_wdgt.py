@@ -23,6 +23,7 @@ class ReviewWdgt(ReviewWidget):
 
     def __init__(self, component_manager):
         ReviewWidget.__init__(self, component_manager)
+        self.is_server_local = False
         self.question_label = ""
         self.question = ""
         self.is_question_box_visible = True
@@ -34,12 +35,12 @@ class ReviewWdgt(ReviewWidget):
         self.is_grade_buttons_enabled = False
         self.status_bar = ""
         self.template = Template("""
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
+<!DOCTYPE html>
+<html>
 <head>
   <title>Mnemosyne</title>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 <style type="text/css">
 table {
   width: 100%;
@@ -54,6 +55,7 @@ table.buttonarea {
 input {
   width: 100%;
 }
+
 $card_css
 </style>
 </head>
@@ -67,7 +69,7 @@ $card_css
 
 <p>$question_label</p>
 
-<table id="mnem">
+<table id="mnem1" class="mnem">
   <tr>
     <td>$question</td>
   </tr>
@@ -75,7 +77,7 @@ $card_css
 
 <p>$answer_label</p>
 
-<table id="mnem">
+<table id="mnem1" class="mnem">
   <tr>
     <td>$answer</td>
   </tr>
@@ -86,6 +88,9 @@ $card_css
 </body>
 </html>
 """)
+        
+    def set_is_server_local(self, is_server_local):
+        self.is_server_local = is_server_local
 
     def redraw_now(self):
         pass
@@ -112,10 +117,10 @@ $card_css
         self.answer = text
 
     def clear_question(self):
-		self.question = ""
+        self.question = ""
 
     def clear_answer(self):
-		self.answer = ""
+        self.answer = ""
 
     def update_show_button(self, text, is_default, is_enabled):
         self.show_button = text
@@ -130,16 +135,26 @@ $card_css
     def update_status_bar_counters(self):
         scheduled_count, non_memorised_count, active_count = \
             self.review_controller().counters()
-        self.status_bar  = "Sch.: %d Not mem.: %d Act.: %d" % \
+        counters = "Sch.: %d Not mem.: %d Act.: %d" % \
             (scheduled_count, non_memorised_count, active_count)
+        self.status_bar = """
+              <table class="buttonarea">
+              <tr>
+                <td> """ + counters + """ </td>
+                <td>
+                  <form action="" method="post">
+                    <input type="submit" name="star" value="Star">
+                  </form>
+                </td>
+              </tr></table>"""
 
     def to_html(self):
         self.controller().heartbeat()
         card_css = ""
         card = self.review_controller().card
         if card:
-            card_css = self.render_chain().\
-                renderer_for_card_type(card.card_type).card_type_css(card.card_type)
+            card_css = self.render_chain().renderer_for_card_type\
+                (card.card_type).card_type_css(card.card_type)
         buttons = ""
         if self.is_grade_buttons_enabled:
             buttons = ""
@@ -162,7 +177,18 @@ $card_css
             self.question = "&nbsp;"  # For esthetic reasons.
         if not self.answer:
             self.answer = "&nbsp;"
+        extended_status_bar = self.status_bar
+        if self.is_server_local:
+            extended_status_bar = extended_status_bar.replace(\
+            "</tr></table>", \
+            """<td>
+                  <form action="" method="post">
+                    <input type="submit" name="exit" value="Exit">
+                  </form>
+                </td>
+            </tr></table>""")
         return self.template.substitute(card_css=card_css, buttons=buttons,
             question_label=self.question_label, question=self.question,
             answer_label=self.answer_label, answer=self.answer,
-            status_bar=self.status_bar).encode("utf-8")
+            status_bar=extended_status_bar).encode("utf-8")
+

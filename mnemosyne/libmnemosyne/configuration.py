@@ -3,13 +3,22 @@
 #
 
 import os
+import re
 import sys
-import cPickle
+import time
+import sqlite3
+import importlib
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.component import Component
 from mnemosyne.libmnemosyne.schedulers.cramming import RANDOM
 from mnemosyne.libmnemosyne.utils import rand_uuid, traceback_string
+
+HOUR = 60 * 60 # Seconds in an hour.
+DAY = 24 * HOUR # Seconds in a day.
+
+re_long_int = re.compile(r"\d+L")
+
 
 config_py = \
 """# Mnemosyne configuration file.
@@ -63,6 +72,10 @@ latex = "latex -interaction=nonstopmode"
 
 # Latex dvipng command.
 dvipng = "dvipng -D 200 -T tight tmp.dvi"
+
+# Try to optimise height of Q and A window to show maximum amount of relevant
+# information
+optimise_Q_A_split = True
 """
 
 class Configuration(Component, dict):
@@ -74,12 +87,13 @@ class Configuration(Component, dict):
         self.data_dir = None
         self.config_dir = None
         self.keys_to_sync = []
-
-    def activate(self):
         self.determine_dirs()
+        
+    def activate(self):
         self.fill_dirs()
         self.load()
         self.load_user_config()
+        self.set_defaults()
 
     def set_defaults(self):
 
@@ -89,7 +103,7 @@ class Configuration(Component, dict):
         """
 
         for key, value in \
-            {"last_database": \
+            list({"last_database": \
                 self.database().default_name + self.database().suffix,
              "first_run": True,
              "import_img_dir": self.data_dir,
@@ -123,23 +137,30 @@ class Configuration(Component, dict):
              "check_for_edited_local_media_files": False,
              "interested_in_old_reps": True,
              "single_database_help_shown": False,
+             "save_database_help_shown": False,
+             "find_duplicates_help_shown": False,
+             "star_help_shown": False,
              "start_card_browser_sorted": False,
              "day_starts_at": 3,
              "save_after_n_reps": 10,
              "latex_preamble": "\\documentclass[12pt]{article}\n"+
-                              "\\pagestyle{empty}\n\\begin{document}",
+                               "\\pagestyle{empty}\n\\begin{document}",
              "latex_postamble": "\\end{document}",
              "latex": "latex -interaction=nonstopmode",
              "dvipng": "dvipng -D 200 -T tight tmp.dvi",
+             "optimise_Q_A_split": True,
              "active_plugins": set(), # Plugin classes, not instances.
              "media_autoplay": True,
              "media_controls": False,
              "run_sync_server": False,
+             "run_web_server": False,
              "sync_server_port": 8512,
-             "sync_server_username": "",
-             "sync_server_password": "",
+             "web_server_port": 8513,
+             "remote_access_username": "",
+             "remote_access_password": "",
              "warned_about_learning_ahead": False,
              "shown_backlog_help": False,
+             "shown_learn_new_cards_help": False,
              "shown_schedule_help": False,
              "asynchronous_database": False,
              "author_name": "",
@@ -148,8 +169,9 @@ class Configuration(Component, dict):
              "import_format": None,
              "import_extra_tag_names": "",
              "export_dir": os.path.expanduser("~"),
-             "export_format": None
-            }.items():
+             "export_format": None,
+             "last_db_maintenance": time.time() - 91 * DAY
+            }.items()):
             self.setdefault(key, value)
         # These keys will be shared in the sync protocol. Front-ends can
         # modify this list, e.g. if they don't want to override the fonts.
@@ -163,7 +185,7 @@ class Configuration(Component, dict):
         # of the program, or because the user deleted the config file. In the
         # latter case, we try to recuperate the id from the history files.
         if self["user_id"] is None:
-            _dir = os.listdir(unicode(os.path.join(self.data_dir, "history")))
+            _dir = os.listdir(os.path.join(self.data_dir, "history"))
             history_files = [x for x in _dir if x[-4:] == ".bz2"]
             if not history_files:
                 self["user_id"] = rand_uuid()
@@ -172,6 +194,7 @@ class Configuration(Component, dict):
         # Allow other plugins or frontend to set their configuration data.
         for f in self.component_manager.all("hook", "configuration_defaults"):
             f.run()
+        self.save()
 
     def __setitem__(self, key, value):
         if key in self.keys_to_sync:
@@ -181,29 +204,54 @@ class Configuration(Component, dict):
         dict.__setitem__(self, key, value)
 
     def load(self):
+        filename = os.path.join(self.config_dir, "config.db")
+        con = sqlite3.connect(filename)
+        # Create database tables if needed.
+        is_new = (con.execute("""select count() from sqlite_master where 
+            type='table' and name='config';""").fetchone()[0] == 0)
+        if is_new:
+            con.executescript("""
+            create table config(
+                key text primary key,
+                value text
+            );""")
+            con.commit()
+        # Quick-and-dirty system to allow us to instantiate GUI variables
+        # from the config db. The alternatives (e.g. having the frontend pass
+        # along modules to import) seem to be much more verbose and quirky.
         try:
-            config_file = file(os.path.join(self.config_dir, "config"), "rb")
-            for key, value in cPickle.load(config_file).iteritems():
-                self[key] = value
-            self.set_defaults()
-            config_file.close()
+            import PyQt5
         except:
-            from mnemosyne.libmnemosyne.utils import traceback_string
-            raise RuntimeError, _("Error in config:") \
-                  + "\n" + traceback_string()
+            pass
+        # Set config settings.
+        for cursor in con.execute("select key, value from config"):
+            # When importing Python 2 representations, strip the L
+            # from long integers.
+            value =  re_long_int.sub(lambda x : x.group()[:-1], cursor[1])
+            try:
+                self[cursor[0]] = eval(value)
+            except:
+                # This can fail if we are running headless now after running
+                # the GUI previously.
+                pass
+        con.close()
 
     def save(self):
-        try:
-            config_file = file(os.path.join(self.config_dir, "config"), "wb")
-            cPickle.dump(dict(self), config_file)
-            # http://mail.python.org/pipermail/tutor/2003-December/027185.html
-            config_file.close()
-        except:
-            from mnemosyne.libmnemosyne.utils import traceback_string
-            raise RuntimeError, _("Unable to save config file:") \
-                  + "\n" + traceback_string()
+        filename = os.path.join(self.config_dir, "config.db")
+        con = sqlite3.connect(filename)
+        # Make sure the entries exist.
+        con.executemany("insert or ignore into config(key, value) values(?,?)", 
+            ((key, repr(value)) for key, value in self.items()))
+        # Make sure they have the right data.
+        con.executemany("update config set value=? where key=?",
+            ((repr(value), key) for key, value in self.items()))   
+        con.commit()
+        con.close()
 
     def determine_dirs(self):  # pragma: no cover
+        # If the config dir was already set by the user, use that.
+        if self.config_dir is not None:
+            return
         # Return if data_dir was already set by the user. In that case, we
         # also store the config in that directory.
         if self.data_dir is not None:
@@ -213,9 +261,9 @@ class Configuration(Component, dict):
         if sys.platform == "win32":
             import ctypes
             n = ctypes.windll.kernel32.GetEnvironmentVariableW\
-                (u"APPDATA", None, 0)
-            buf = ctypes.create_unicode_buffer(u"\0"*n)
-            ctypes.windll.kernel32.GetEnvironmentVariableW(u"APPDATA", buf, n)
+                ("APPDATA", None, 0)
+            buf = ctypes.create_unicode_buffer("\0"*n)
+            ctypes.windll.kernel32.GetEnvironmentVariableW("APPDATA", buf, n)
             self.data_dir = join(buf.value, "Mnemosyne")
             self.config_dir = self.data_dir
         elif sys.platform == "darwin":
@@ -255,21 +303,18 @@ class Configuration(Component, dict):
         for directory in ["history", "plugins", "backups"]:
             if not exists(join(self.data_dir, directory)):
                 os.mkdir(join(self.data_dir, directory))
-        # Create default configuration.
-        if not exists(join(self.config_dir, "config")):
-            self.save()
         # Create default config.py.
         config_file = join(self.config_dir, "config.py")
         if not exists(config_file):
-            f = file(config_file, "w")
-            print >> f, config_py
+            f = open(config_file, "w")
+            print(config_py, file=f)
             f.close()
         # Create machine_id. Do this in a separate file, as extra warning
         # signal that people should not copy this file to a different machine.
         machine_id_file = join(self.config_dir, "machine.id")
         if not exists(machine_id_file):
-            f = file(machine_id_file, "w")
-            print >> f, rand_uuid()
+            f = open(machine_id_file, "w")
+            print(rand_uuid(), file=f)
             f.close()
 
     def set_card_type_property(self, property_name, property_value, card_type,
@@ -341,7 +386,7 @@ class Configuration(Component, dict):
                 del self[property_name][card_type.id]
 
     def machine_id(self):
-        return file(os.path.join(self.config_dir, "machine.id")).\
+        return open(os.path.join(self.config_dir, "machine.id")).\
             readline().rstrip()
 
     def load_user_config(self):
@@ -353,13 +398,13 @@ class Configuration(Component, dict):
         if os.path.exists(config_file):
             try:
                 import config
-                config = reload(config)
+                config = importlib.reload(config)
                 for var in dir(config):
                     if var in self:
                         self[var] = getattr(config, var)
             except:
-                raise RuntimeError, _("Error in config.py:") \
-                          + "\n" + traceback_string()
+                raise RuntimeError(_("Error in config.py:") \
+                          + "\n" + traceback_string())
 
     def change_user_id(self, new_user_id):
 

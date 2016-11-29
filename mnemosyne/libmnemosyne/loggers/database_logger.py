@@ -4,6 +4,8 @@
 
 import os
 import sys
+import time
+from datetime import datetime
 
 import mnemosyne.version
 from mnemosyne.libmnemosyne.logger import Logger
@@ -15,8 +17,12 @@ class DatabaseLogger(Logger):
 
     def started_program(self, version_string=None):
         if version_string == None:
-            version_string = "Mnemosyne %s %s %s" % \
-                (mnemosyne.version.version, os.name, sys.platform)
+            ts = time.time()
+            td = datetime.fromtimestamp(ts) - datetime.utcfromtimestamp(ts)
+            utc_offset = int((td.microseconds + \
+                (td.seconds + td.days * 24. * 3600) * 10**6) / 10**6 / 60 / 60)
+            version_string = "Mnemosyne %s %s %s TZ %s" % \
+                (mnemosyne.version.version, os.name, sys.platform, utc_offset)
         self.database().log_started_program(self.timestamp, version_string)
 
     def stopped_program(self):

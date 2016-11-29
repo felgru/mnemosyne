@@ -27,9 +27,9 @@ class ComponentManager(object):
     def register(self, component):
         comp_type = component.component_type
         used_for = component.used_for
-        if not self.components.has_key(used_for):
+        if used_for not in self.components:
             self.components[used_for] = {}
-        if not self.components[used_for].has_key(comp_type):
+        if comp_type not in self.components[used_for]:
             self.components[used_for][comp_type] = [component]
         else:
             if component not in self.components[used_for][comp_type]:
@@ -125,7 +125,9 @@ class ComponentManager(object):
                 for component in self.components[used_for][comp_type]:
                     if not isinstance(component, type):
                         component.deactivate()
-        self.components = {}
+        # Following line deactivated to work around
+        # https://bugreports.qt.io/browse/QTBUG-52988                 
+        #self.components = {}
         self.card_type_with_id = {}
 
     def debug(self, msg):
@@ -135,7 +137,7 @@ class ComponentManager(object):
         """
 
         if self.debug_file:
-            self.debug_file.write(unicode(msg + "\n").encode('UTF-8'))
+            self.debug_file.write(str(msg + "\n").encode('UTF-8'))
 
 # A component manager stores the entire session state of a user through the
 # different components it registers. To enable multiple users to use a single
@@ -151,7 +153,7 @@ def clear_component_managers():
 
     """
 
-    user_ids = _component_managers.keys()
+    user_ids = list(_component_managers.keys())
     for user_id in user_ids:
         unregister_component_manager(user_id)
 

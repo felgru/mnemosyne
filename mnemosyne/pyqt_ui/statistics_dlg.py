@@ -2,7 +2,7 @@
 # statistics_dlg.py <Peter.Bienstman@UGent.be>
 #
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.component import Component
@@ -10,16 +10,15 @@ from mnemosyne.pyqt_ui.ui_statistics_dlg import Ui_StatisticsDlg
 from mnemosyne.libmnemosyne.ui_components.dialogs import StatisticsDialog
 
 
-class StatisticsDlg(QtGui.QDialog, Ui_StatisticsDlg, StatisticsDialog):
+class StatisticsDlg(QtWidgets.QDialog, StatisticsDialog, Ui_StatisticsDlg):
 
     """A tab widget containing several statistics pages. The number and names
     of the tab pages are determined at run time.
 
     """
 
-    def __init__(self, component_manager):
-        StatisticsDialog.__init__(self, component_manager)
-        QtGui.QDialog.__init__(self, self.main_widget())
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
 
     def activate(self):
         self.setupUi(self)
@@ -30,9 +29,10 @@ class StatisticsDlg(QtGui.QDialog, Ui_StatisticsDlg, StatisticsDialog):
         previous_page_index = self.config()["previous_statistics_page"]
         page_index = 0
         for page in self.component_manager.all("statistics_page"):
-            page = page(self.component_manager)
-            self.tab_widget.addTab(StatisticsPageWdgt(self.component_manager,
-                self, page, page_index), _(page.name))
+            page = page(component_manager=self.component_manager)
+            self.tab_widget.addTab(StatisticsPageWdgt(page, page_index,
+                parent=self, component_manager=self.component_manager),
+                                   _(page.name))
             page_index += 1
         self.tab_widget.tabBar().setVisible(self.tab_widget.count() > 1)
         if previous_page_index >= self.tab_widget.count():
@@ -57,7 +57,7 @@ class StatisticsDlg(QtGui.QDialog, Ui_StatisticsDlg, StatisticsDialog):
     def accept(self):
         # 'accept' does not generate a close event.
         self._store_state()
-        return QtGui.QDialog.accept(self)
+        return QtWidgets.QDialog.accept(self)
 
     def display_page(self, page_index):
         page = self.tab_widget.widget(page_index)
@@ -72,7 +72,7 @@ class StatisticsDlg(QtGui.QDialog, Ui_StatisticsDlg, StatisticsDialog):
         page.display_variant(variant_index)
 
 
-class StatisticsPageWdgt(QtGui.QWidget, Component):
+class StatisticsPageWdgt(QtWidgets.QWidget, Component):
 
     """A page in the StatisticsDlg tab widget. This page widget only contains
     a combobox to select different variants of the page. The widget that
@@ -80,14 +80,13 @@ class StatisticsPageWdgt(QtGui.QWidget, Component):
     becomes visible.
 
     """
-
-    def __init__(self, component_manager, parent, statistics_page, page_index):
-        Component.__init__(self, component_manager)
-        QtGui.QWidget.__init__(self, parent)
+        
+    def __init__(self, statistics_page, page_index, **kwds):
+        super().__init__(**kwds)
         self.statistics_page = statistics_page
         self.page_index = page_index
-        self.vbox_layout = QtGui.QVBoxLayout(self)
-        self.combobox = QtGui.QComboBox(self)
+        self.vbox_layout = QtWidgets.QVBoxLayout(self)
+        self.combobox = QtWidgets.QComboBox(self)
         self.variant_ids = []
         self.variant_widgets = []
         self.current_variant_widget = None
@@ -97,7 +96,7 @@ class StatisticsPageWdgt(QtGui.QWidget, Component):
         for variant_id, variant_name in variants:
             self.variant_ids.append(variant_id)
             self.variant_widgets.append(None)
-            self.combobox.addItem(unicode(_(variant_name)))
+            self.combobox.addItem(_(variant_name))
         if len(self.variant_ids) <= 1 or \
            self.statistics_page.show_variants_in_combobox == False:
             self.combobox.hide()
@@ -118,8 +117,8 @@ class StatisticsPageWdgt(QtGui.QWidget, Component):
                 (self.variant_ids[variant_index])
             widget_class = self.component_manager.current(\
                 "statistics_widget", used_for=self.statistics_page.__class__)
-            widget = widget_class(self.component_manager, self,
-                self.statistics_page)
+            widget = widget_class(component_manager=self.component_manager, 
+                parent=self, page=self.statistics_page)
             widget.show_statistics(self.variant_ids[variant_index])
             self.variant_widgets[variant_index] = widget
         # Show the widget created earlier.

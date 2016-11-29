@@ -2,19 +2,20 @@
 # main_wdgt.py <Peter.Bienstman@UGent.be>
 #
 
-import sys
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.ui_main_wdgt import Ui_MainWdgt
 from mnemosyne.libmnemosyne.ui_components.main_widget import MainWidget
+ 
+# Note: inheritance from Ui_MainWdgt should come last, as it inherits
+# directly from 'object' with supporting a correct super().__init__
+# call.
 
-
-class MainWdgt(QtGui.QMainWindow, Ui_MainWdgt, MainWidget):
-
-    def __init__(self, component_manager):
-        MainWidget.__init__(self, component_manager)
-        QtGui.QMainWindow.__init__(self)
+class MainWdgt(QtWidgets.QMainWindow, MainWidget, Ui_MainWdgt):
+    
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
         self.setupUi(self)
         # Qt designer does not allow setting multiple shortcuts per action.
         self.actionDeleteCurrentCard.setShortcuts\
@@ -31,7 +32,7 @@ class MainWdgt(QtGui.QMainWindow, Ui_MainWdgt, MainWidget):
         if event.type() == QtCore.QEvent.LanguageChange:
             self.retranslateUi(self)
         else:
-            QtGui.QMainWindow.changeEvent(self, event)
+            QtWidgets.QMainWindow.changeEvent(self, event)
 
     def createPopupMenu(self):
         # Don't create a silly popup menu saying ('toolBar').
@@ -60,7 +61,7 @@ class MainWdgt(QtGui.QMainWindow, Ui_MainWdgt, MainWidget):
         self.setWindowTitle(text)
 
     def top_window(self):
-        for widget in QtGui.QApplication.topLevelWidgets():
+        for widget in QtWidgets.QApplication.topLevelWidgets():
             if not widget.__class__.__name__.startswith("Q") and \
                 widget.__class__.__name__ != "MainWdgt" and \
                 widget.isVisible() == True:
@@ -68,27 +69,42 @@ class MainWdgt(QtGui.QMainWindow, Ui_MainWdgt, MainWidget):
         return self
 
     def show_information(self, text):
-        QtGui.QMessageBox.information(self.top_window(), _("Mnemosyne"),
-            text, _("&OK"))
+        QtWidgets.QMessageBox.information(self.top_window(), _("Mnemosyne"),
+            text)
 
     def show_question(self, text, option0, option1, option2):
-        return QtGui.QMessageBox.question(self.top_window(),  _("Mnemosyne"),
-            text, option0, option1, option2, 0, -1)
+        dialog = QtWidgets.QMessageBox(self.top_window())
+        dialog.setIcon(QtWidgets.QMessageBox.Question)
+        dialog.setWindowTitle(_("Mnemosyne"))
+        dialog.setText(text)
+        button0 = dialog.addButton(option0, QtWidgets.QMessageBox.ActionRole)
+        button1 = dialog.addButton(option1, QtWidgets.QMessageBox.ActionRole)
+        if option2:
+            button2 = dialog.addButton(option2, QtWidgets.QMessageBox.ActionRole)
+        dialog.exec_()
+        if dialog.clickedButton() == button0:
+            result = 0
+        elif dialog.clickedButton() == button1:
+            result = 1
+        elif dialog.clickedButton() == button2:
+            result = 2
+        return result
 
     def show_error(self, text):
-        QtGui.QMessageBox.critical(self.top_window(), _("Mnemosyne"), text,
-            _("&OK"), "", "", 0, -1)
+        QtWidgets.QMessageBox.critical(self.top_window(), _("Mnemosyne"), text)
 
     def default_font_size(self):
-        return QtGui.qApp.font().pointSize()
+        return QtWidgets.qApp.font().pointSize()
 
     def get_filename_to_open(self, path, filter, caption=""):
-        return unicode(QtGui.QFileDialog.\
-            getOpenFileName(self, caption, path, filter))
-
+        filename, _ = QtWidgets.QFileDialog.\
+            getOpenFileName(self, caption, path, filter)
+        return filename
+    
     def get_filename_to_save(self, path, filter, caption=""):
-        return unicode(QtGui.QFileDialog.\
-            getSaveFileName(self, caption, path, filter))
+        filename, _ = QtWidgets.QFileDialog.\
+            getSaveFileName(self, caption, path, filter)
+        return filename
 
     def set_status_bar_message(self, text):
         self.status_bar.showMessage(text)
@@ -98,7 +114,12 @@ class MainWdgt(QtGui.QMainWindow, Ui_MainWdgt, MainWidget):
             self.progress_bar.close()
             self.progress_bar = None
         if not self.progress_bar:
-            self.progress_bar = QtGui.QProgressDialog(self.top_window())
+            self.progress_bar = QtWidgets.QProgressDialog(self.top_window())
+            self.progress_bar.setWindowFlags(QtCore.Qt.Dialog \
+                | QtCore.Qt.CustomizeWindowHint \
+                | QtCore.Qt.WindowTitleHint \
+                & ~ QtCore.Qt.WindowCloseButtonHint \
+                & ~ QtCore.Qt.WindowMinMaxButtonsHint)
             self.progress_bar.setWindowTitle(_("Mnemosyne"))
             self.progress_bar.setWindowModality(QtCore.Qt.WindowModal)
             self.progress_bar.setCancelButton(None)

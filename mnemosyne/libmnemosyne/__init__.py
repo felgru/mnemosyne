@@ -4,10 +4,12 @@
 
 import os
 import sys
+import importlib
 import traceback
 
 from mnemosyne.libmnemosyne.component import Component
-from mnemosyne.libmnemosyne.utils import expand_path, traceback_string
+from mnemosyne.libmnemosyne.utils import expand_path, contract_path, \
+    traceback_string
 from mnemosyne.libmnemosyne.component_manager import new_component_manager, \
     register_component_manager, unregister_component_manager
 
@@ -25,7 +27,11 @@ class Mnemosyne(Component):
     def __init__(self, upload_science_logs, interested_in_old_reps,
         asynchronous_database=False):
 
-        """For mobile clients, it is recommended that you set
+        """When 'upload_science_logs' is set to 'None', it means that its
+        value is user-specified through the GUI. Explicitly setting this to
+        True or False overrides the user choice.
+
+        For mobile clients, it is recommended that you set
         'upload_science_logs' to 'False'. We need to specify this as an
         argument here, so that we can inject it on time to prevent the
         uploader thread from starting.
@@ -49,6 +55,8 @@ class Mnemosyne(Component):
         self.components = [
          ("mnemosyne.libmnemosyne.databases.SQLite",
           "SQLite"),
+         ("mnemosyne.libmnemosyne.database",
+          "DatabaseMaintenance"),         
          ("mnemosyne.libmnemosyne.configuration",
           "Configuration"),
          ("mnemosyne.libmnemosyne.loggers.database_logger",
@@ -115,6 +123,8 @@ class Mnemosyne(Component):
           "RetentionScore"),
          ("mnemosyne.libmnemosyne.statistics_pages.cards_added",
           "CardsAdded"),
+         ("mnemosyne.libmnemosyne.statistics_pages.cards_learned",
+          "CardsLearned"),
          ("mnemosyne.libmnemosyne.statistics_pages.grades",
           "Grades"),
          ("mnemosyne.libmnemosyne.statistics_pages.easiness",
@@ -127,6 +137,8 @@ class Mnemosyne(Component):
           "Mnemosyne1XML"),
          ("mnemosyne.libmnemosyne.file_formats.mnemosyne2_cards",
           "Mnemosyne2Cards"),
+         ("mnemosyne.libmnemosyne.file_formats.mnemosyne2_db",
+          "Mnemosyne2Db"),         
          ("mnemosyne.libmnemosyne.file_formats.tsv",
           "Tsv"),
          ("mnemosyne.libmnemosyne.file_formats.supermemo_7_txt",
@@ -151,8 +163,9 @@ class Mnemosyne(Component):
         except:
             sys.stderr.write(body)
 
-    def initialise(self, data_dir=None, filename=None,
-                   automatic_upgrades=True, debug_file=None):
+    def initialise(self, data_dir=None, config_dir=None,
+                   filename=None, automatic_upgrades=True, debug_file=None, 
+                   server_only=False):
 
         """The automatic upgrades of the database can be turned off by setting
         'automatic_upgrade' to False. This is mainly useful for the testsuite.
@@ -162,27 +175,46 @@ class Mnemosyne(Component):
         if debug_file:
             self.component_manager.debug_file = open(debug_file, "w", 0)
         self.register_components()
-        # Upgrade if needed.
+        # Upgrade from 1.x if needed.
         if automatic_upgrades:
             from mnemosyne.libmnemosyne.upgrades.upgrade1 import Upgrade1
             Upgrade1(self.component_manager).backup_old_dir()
         if data_dir:
             self.config().data_dir = data_dir
+            self.config().config_dir = data_dir
+        if config_dir:
+            self.config().config_dir = config_dir
+        # Upgrade config if needed.
+        if automatic_upgrades:
+            from mnemosyne.libmnemosyne.upgrades.upgrade3 import Upgrade3
+            Upgrade3(self.component_manager).run() 
         self.activate_components()
         register_component_manager(self.component_manager,
-            self.config()["user_id"])
+                                   self.config()["user_id"])
         self.execute_user_plugin_dir()
         self.activate_saved_plugins()
+        # If we are only running a sync or a review server, do not yet load
+        # the database to prevent threading access issues.
+        if server_only:
+            if filename:
+                self.config()["last_database"] = \
+                    contract_path(filename, self.config().data_dir)
+            return
         # Loading the database should come after all user plugins have been
         # loaded, since these could be needed e.g. for a card type in the
         # database.
+        if filename and not filename.endswith(".db"):
+            from mnemosyne.libmnemosyne.translator import _
+            self.main_widget().show_error(\
+                _("Command line argument is not a *.db file."))
+            sys.exit()
         self.load_database(filename)
         # Only now that the database is loaded, we can start writing log
         # events to it. This is why we log started_scheduler and
         # loaded_database manually.
         try:
             self.log().started_program()
-        except Exception, e:
+        except Exception as e:
             if "lock" in str(e):
                 from mnemosyne.libmnemosyne.translator import _
                 self.main_widget().show_error(\
@@ -194,15 +226,15 @@ class Mnemosyne(Component):
         self.log().started_scheduler()
         self.log().loaded_database()
         self.log().future_schedule()
-        # Upgrade if needed.
+        # Upgrade from 1.x if needed.
         if automatic_upgrades:
             from mnemosyne.libmnemosyne.upgrades.upgrade1 import Upgrade1
-            Upgrade1(self.component_manager).run()
+            Upgrade1(self.component_manager).run()          
         # Finally, we can activate the main widget.
         self.main_widget().activate()
 
     def register_components(self):
-
+        
         """We register all components, but don't activate them yet, because in
         order to activate certain components, certain other components already
         need to be registered. Also, the activation needs to happen in a
@@ -212,10 +244,9 @@ class Mnemosyne(Component):
         """
 
         for module_name, class_name in self.components:
-            exec("from %s import %s" % (module_name, class_name))
-            exec("component = %s" % class_name)
+            component = getattr(importlib.import_module(module_name), class_name)
             if component.instantiate == Component.IMMEDIATELY:
-                component = component(self.component_manager)
+                component = component(component_manager=self.component_manager)
             self.component_manager.register(component)
         for plugin_name in self.extra_components_for_plugin:
             for module_name, class_name in \
@@ -235,13 +266,13 @@ class Mnemosyne(Component):
         # Activate config and inject necessary settings.
         try:
             self.component_manager.current("config").activate()
-        except RuntimeError, e:
-            self.main_widget().show_error(unicode(e))
-        # If the front end programmer decides we never upload logs, we override
-        # the user setting here.
+        except RuntimeError as e:
+            self.main_widget().show_error(str(e))
+        # Allow front end programmer to override the user setting.
         if self.upload_science_logs is False:
             self.config()["upload_science_logs"] = False
-
+        if self.upload_science_logs is True:
+            self.config()["upload_science_logs"] = True
         self.config()["interested_in_old_reps"] = self.interested_in_old_reps
         self.config()["asynchronous_database"] = self.asynchronous_database
         # Activate other components.
@@ -249,19 +280,25 @@ class Mnemosyne(Component):
                           "controller"]:
             try:
                 self.component_manager.current(component).activate()
-            except RuntimeError, e:
-                self.main_widget().show_error(unicode(e))
-        server = self.component_manager.current("sync_server")
-        if server:
-            server.activate()
+            except RuntimeError as e:
+                self.main_widget().show_error(str(e))
+        media_server = self.component_manager.current("media_server")
+        if media_server:
+            media_server.activate()        
+        sync_server = self.component_manager.current("sync_server")
+        if sync_server:
+            sync_server.activate()
+        web_server = self.component_manager.current("web_server")
+        if web_server:
+            web_server.activate()
 
     def execute_user_plugin_dir(self):
         # Note that we put user plugins in the data_dir and not the
         # config_dir as there could be plugins (e.g. new card types) for
         # which the database does not make sense without them.
-        plugin_dir = unicode(os.path.join(self.config().data_dir, "plugins"))
+        plugin_dir = os.path.join(self.config().data_dir, "plugins")
         sys.path.insert(0, plugin_dir)
-        for component in os.listdir(unicode(plugin_dir)):
+        for component in os.listdir(plugin_dir):
             if component.endswith(".py"):
                 try:
                     __import__(component[:-3])
@@ -290,26 +327,36 @@ class Mnemosyne(Component):
         path = expand_path(filename, self.config().data_dir)
         try:
             if not os.path.exists(path):
-                self.database().new(path)
+                try:
+                    self.database().new(path)
+                except:
+                    from mnemosyne.libmnemosyne.translator import _
+                    raise RuntimeError(_("Previous drive letter no longer available."))
             else:
                 self.database().load(path)
-        except RuntimeError, e:
-            # Making sure the GUI is in a correct state when no database is
-            # loaded would require a lot of extra code, and this is only a
-            # corner case anyhow. So, as workaround, we create a temporary
-            # database.
+            self.controller().update_title()
+        except RuntimeError as e:
             from mnemosyne.libmnemosyne.translator import _
-            self.main_widget().show_error(unicode(e))
-            self.main_widget().show_error(_("Creating temporary database."))
-            path = os.path.join(os.path.split(path)[0], "___TMP___" \
-                + self.database().suffix)
-            self.database().new(path)
-        self.controller().update_title()
+            self.main_widget().show_error(str(e))
+            self.main_widget().show_information(\
+_("If you are using a USB key, refer to the instructions on the website so as not to be affected by drive letter changes."))
+            success = False
+            while not success:
+                try:
+                    self.database().abandon()
+                    self.controller().show_open_file_dialog()
+                    success = True
+                except RuntimeError as e:
+                    self.main_widget().show_error(str(e))
 
     def finalise(self):
         # Deactivate the sync server first, so that we make sure it reverts
         # to the right backup file in case of problems.
         server = self.component_manager.current("sync_server")
+        if server:
+            server.deactivate()
+        # Ditto for the web server.
+        server = self.component_manager.current("web_server")
         if server:
             server.deactivate()
         # Saving the config should happen before we deactivate the plugins,
@@ -323,9 +370,11 @@ class Mnemosyne(Component):
         # card types does not raise an error about card types in use.
         self.database().deactivate()
         self.component_manager.unregister(self.database())
-        # Then do the other components.
+        # Then do the review widget and other components.
+        if self.review_widget():
+            self.review_widget().deactivate()
         self.component_manager.deactivate_all()
         unregister_component_manager(user_id)
         if self.component_manager.debug_file:
             self.component_manager.debug_file.close()
-
+            

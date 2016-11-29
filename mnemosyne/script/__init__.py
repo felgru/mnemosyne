@@ -12,16 +12,16 @@ class ScriptReviewWidget(ReviewWidget):
     def redraw_now(self):
         pass
 
-        
+
 class ScriptMainWidget(MainWidget):
 
     def __init__(self, component_manager):
         self.q_and_a = None
 
     def show_question(self, question, option0, option1, option2):
-        print question, option0, option1, option2
+        print((question, option0, option1, option2))
         if self.q_and_a is not None:
-            for q, a  in self.q_and_a.iteritems():
+            for q, a in self.q_and_a.items():
                 if question.startswith(q):
                     return a
         raise NotImplementedError

@@ -139,15 +139,9 @@ class SM2Mnemosyne(Scheduler):
         self._card_ids_in_queue = []
         self._fact_ids_in_queue = []
         self._fact_ids_memorised = []
-        self._fact_ids_memorised_expires_at = int(time.time()) + DAY
         self._card_id_last = None
         self.stage = 1
-        self.warned_about_too_many_cards = False
-
-    def heartbeat(self):
-        if time.time() > self._fact_ids_memorised_expires_at:
-            self._fact_ids_memorised = []
-            self._fact_ids_memorised_expires_at = int(time.time()) + DAY
+        self.warned_about_too_many_cards = False     
 
     def set_initial_grade(self, cards, grade):
 
@@ -552,7 +546,7 @@ class SM2Mnemosyne(Scheduler):
             self.main_widget().show_information(\
         _("You've memorised 15 new or failed cards.") + " " +\
         _("If you do this for many days, you could get a big workload later."))
-            self.warned_about_too_many_cards = True
+            self.warned_about_too_many_cards = True       
         # Run hooks.
         self.database().current_criterion().apply_to_card(card)
         for f in self.component_manager.all("hook", "after_repetition"):

@@ -13,7 +13,7 @@ class PyQtConfiguration(Hook):
 
     def run(self):
         for key, value in \
-            {"list_font": None,
+            list({"list_font": None,
              "last_used_card_type_id": "",
              "is_last_used_tags_per_card_type": False,
              "last_used_tags_for_card_type_id": {},
@@ -29,7 +29,6 @@ class PyQtConfiguration(Hook):
              "edit_card_dlg_state": None,
              "plugins_dlg_state": None,
              "clone_help_shown": False,
-             "compact_help_shown": False,
              "browse_cards_dlg_state": None,
              "browse_cards_dlg_splitter_1_state": None,
              "browse_cards_dlg_splitter_2_state": None,
@@ -45,12 +44,11 @@ class PyQtConfiguration(Hook):
              "port_for_sync_as_client": 8512,
              "username_for_sync_as_client": "",
              "password_for_sync_as_client": "",
-             "port_for_sync_as_server": 8512,
-             "remote_access_username": "",
-             "remote_access_password": "",
              "started_add_edit_cards_n_times": 0,
              "started_browse_cards_n_times": 0,
+             "started_activate_cards_n_times": 0,
              "showed_help_on_renaming_sets": False,
-             "showed_help_on_double_clicking_sets": False
-            }.items():
+             "showed_help_on_double_clicking_sets": False,
+             "showed_help_on_adding_tags": False
+            }.items()):
             self.config().setdefault(key, value)

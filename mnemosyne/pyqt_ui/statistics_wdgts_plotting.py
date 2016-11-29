@@ -2,36 +2,41 @@
 # statistics_wdgts_plotting.py <mike@peacecorps.org.cv>, <Peter.Bienstman@UGent.be>
 #
 
-from PyQt4 import QtGui
-
-from matplotlib import rcParams
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
+from PyQt5 import QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.statistics_pages.grades import Grades
 from mnemosyne.libmnemosyne.statistics_pages.schedule import Schedule
 from mnemosyne.libmnemosyne.statistics_pages.easiness import Easiness
 from mnemosyne.libmnemosyne.statistics_pages.cards_added import CardsAdded
+from mnemosyne.libmnemosyne.statistics_pages.cards_learned import CardsLearned
 from mnemosyne.libmnemosyne.statistics_pages.retention_score import RetentionScore
 from mnemosyne.libmnemosyne.ui_components.statistics_widget import StatisticsWidget
 
 
-class PlotStatisticsWdgt(QtGui.QWidget, StatisticsWidget):
+class PlotStatisticsWdgt(QtWidgets.QWidget, StatisticsWidget):
 
     """A canvas to plot graphs according to the data and display contained in a
     statistics page.
 
     """
 
-    def __init__(self, component_manager, parent, page):
-        QtGui.QWidget.__init__(self, parent)
-        StatisticsWidget.__init__(self, component_manager)
+    def __init__(self, parent, page, **kwds):
+        super().__init__(**kwds)
         self.parent = parent
         self.page = page
 
     def activate(self):
-        self.vbox_layout = QtGui.QVBoxLayout(self)
+        # Late import to speed up app startup.
+        from matplotlib import use
+        use("Qt5Agg")
+        
+        from matplotlib import rcParams
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas        
+        
+        
+        self.vbox_layout = QtWidgets.QVBoxLayout(self)
         # The idea was to lazily import matplotlib only when we open the
         # statistics dialog. However, the import statements below can often
         # take ten times as long as compared to the a static import at the
@@ -43,8 +48,8 @@ class PlotStatisticsWdgt(QtGui.QWidget, StatisticsWidget):
         fig = Figure(figsize=(6.5, 5.2), facecolor=colour, edgecolor=colour)
         self.canvas = FigureCanvas(fig)
         self.vbox_layout.addWidget(self.canvas)
-        self.canvas.setSizePolicy(QtGui.QSizePolicy.MinimumExpanding,
-                                  QtGui.QSizePolicy.MinimumExpanding)
+        self.canvas.setSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding,
+                                  QtWidgets.QSizePolicy.MinimumExpanding)
         self.canvas.setParent(self)
         self.axes = fig.add_subplot(111)
         self.canvas.updateGeometry()
@@ -78,10 +83,10 @@ class PlotStatisticsWdgt(QtGui.QWidget, StatisticsWidget):
         # padding for most data, but looks ugly when one bar is *much* larger
         # than the others. Note that bool() can be used as the filter function
         # since bool(0) == False.
-        non_zero = filter(bool, self.page.y)
+        non_zero = list(filter(bool, self.page.y))
         if non_zero:
             avg = lambda s: sum(s) / len(s)
-            avg_height = avg(filter(bool, self.page.y))
+            avg_height = avg(list(filter(bool, self.page.y)))
         else:
             avg_height = 0
         pad = avg_height * 1.05 - avg_height
@@ -106,7 +111,7 @@ class PlotStatisticsWdgt(QtGui.QWidget, StatisticsWidget):
             return "0.91"
         else:
             r, g, b, a = parent.palette().color(parent.backgroundRole()).getRgb()
-            return map(lambda x: x / 255.0, (r, g, b))
+            return [x / 255.0 for x in (r, g, b)]
 
 
 class BarChartDaysWdgt(PlotStatisticsWdgt):
@@ -119,70 +124,70 @@ class BarChartDaysWdgt(PlotStatisticsWdgt):
         if not self.page.y:
             self.display_message(_("No stats available."))
             return
-        ticklabels_pos = lambda i, j, k: map(lambda x: "+%d" % x, range(i, j, k))
-        ticklabels_neg = lambda i, j, k: map(lambda x: "%d" % x, range(i, j, k))
+        ticklabels_pos = lambda i, j, k: ["+%d" % x for x in range(i, j, k)]
+        ticklabels_neg = lambda i, j, k: ["%d" % x for x in range(i, j, k)]
         if hasattr(self.page, "NEXT_WEEK") and \
                variant == self.page.NEXT_WEEK:
-            xticks = range(1, 8, 1)
+            xticks = list(range(1, 8, 1))
             xticklabels = ticklabels_pos(1, 8, 1)
             show_text_value = True
             linewidth = 1
         elif hasattr(self.page, "NEXT_MONTH") and \
             variant == self.page.NEXT_MONTH:
-            xticks = [1] + range(5, 32, 5)
+            xticks = [1] + list(range(5, 32, 5))
             xticklabels = ["+1"] + ticklabels_pos(5, 32, 5)
             show_text_value = False
             linewidth = 1
         elif hasattr(self.page, "NEXT_3_MONTHS") and \
             variant == self.page.NEXT_3_MONTHS:
-            xticks = [1] + range(10, 92, 10)
+            xticks = [1] + list(range(10, 92, 10))
             xticklabels = ["+1"] + ticklabels_pos(10, 92, 10)
             show_text_value = False
             linewidth = 1
         elif hasattr(self.page, "NEXT_6_MONTHS") and \
             variant == self.page.NEXT_6_MONTHS:
-            xticks = [1] + range(30, 183, 30)
+            xticks = [1] + list(range(30, 183, 30))
             xticklabels = ["+1"] + ticklabels_pos(30, 183, 30)
             show_text_value = False
             linewidth = 0
         elif hasattr(self.page, "NEXT_YEAR") and \
                  variant == self.page.NEXT_YEAR:
-            xticks = [1] + range(60, 365, 60)
+            xticks = [1] + list(range(60, 365, 60))
             xticklabels = ["+1"] + ticklabels_pos(60, 365, 60)
             show_text_value = False
             linewidth = 0
         elif hasattr(self.page, "LAST_WEEK") and \
             variant == self.page.LAST_WEEK:
-            xticks = range(-7, 1, 1)
+            xticks = list(range(-7, 1, 1))
             xticklabels = ticklabels_neg(-7, 1, 1)
             show_text_value = True
             linewidth = 1
         elif hasattr(self.page, "LAST_MONTH") and \
             variant == self.page.LAST_MONTH:
-            xticks = range(-30, -4, 5) + [0]
+            xticks = list(range(-30, -4, 5)) + [0]
             xticklabels = ticklabels_neg(-30, -4, 5) + ["0"]
             show_text_value = False
             linewidth = 1
         elif hasattr(self.page, "LAST_3_MONTHS") and \
             variant == self.page.LAST_3_MONTHS:
-            xticks = range(-90, -9, 10) + [0]
+            xticks = list(range(-90, -9, 10)) + [0]
             xticklabels = ticklabels_neg(-90, -9, 10) + ["0"]
             show_text_value = False
             linewidth = 1
         elif hasattr(self.page, "LAST_6_MONTHS") and \
             variant == self.page.LAST_6_MONTHS:
-            xticks = range(-180, -19, 20) + [0]
+            xticks = list(range(-180, -19, 20)) + [0]
             xticklabels = ticklabels_neg(-180, -19, 20) + ["0"]
             show_text_value = False
             linewidth = 0
         elif hasattr(self.page, "LAST_YEAR") and \
             variant == self.page.LAST_YEAR:
-            xticks = range(-360, -59, 60) + [0]
+            xticks = list(range(-360, -59, 60)) + [0]
             xticklabels = ticklabels_neg(-360, -59, 60) + ["0"]
             show_text_value = False
             linewidth = 0
         else:
-            raise AttributeError, "Invalid variant"
+            raise AttributeError("Invalid variant")
         # Plot data.
         self.axes.bar(self.page.x, self.page.y, width=1, align="center",
                       linewidth=linewidth, color=self.colour, alpha=0.75)
@@ -210,7 +215,7 @@ class ScheduleWdgt(BarChartDaysWdgt):
     used_for = Schedule
 
     def activate(self):
-        super(ScheduleWdgt, self).activate()
+        super().activate()
         self.title = _(self.title)
 
 
@@ -222,7 +227,7 @@ class RetentionScoreWdgt(BarChartDaysWdgt):
     y_max = 100
 
     def activate(self):
-        super(RetentionScoreWdgt, self).activate()
+        super().activate()
         self.title = _(self.title)
 
 
@@ -233,7 +238,18 @@ class CardsAddedWdgt(BarChartDaysWdgt):
     title = _("Number of cards added")
 
     def activate(self):
-        super(CardsAddedWdgt, self).activate()
+        super().activate()
+        self.title = _(self.title)
+
+
+class CardsLearnedWdgt(BarChartDaysWdgt):
+
+    used_for = CardsLearned
+    colour = "yellow"
+    title = _("Number of new cards learned")
+
+    def activate(self):
+        super().activate()
         self.title = _(self.title)
 
 
@@ -251,7 +267,7 @@ class GradesWdgt(PlotStatisticsWdgt):
         self.axes.set_title(_("Number of cards"))
         self.axes.set_xlabel(_("Grades"))
         self.axes.set_xticks(self.page.x)
-        self.axes.set_xticklabels([_("Not seen")] + range(0, 6))
+        self.axes.set_xticklabels([_("Not seen")] + list(range(0, 6)))
         xmin, xmax = min(self.page.x), max(self.page.x)
         self.axes.set_xlim(xmin=xmin - 0.5, xmax=xmax + 0.5)
         self.axes.set_ylim(ymax=int(max(self.page.y) *  1.1) + 1)

@@ -23,7 +23,7 @@ class Tsv(FileFormat, MediaPreprocessor):
 
     description = _("Tab-separated text files")
     extension = ".txt"
-    filename_filter = _("Tab-separated text files (*.txt)")
+    filename_filter = _("Tab-separated text files (*.txt *.tsv *.tab)")
     import_possible = True
     export_possible = True
 
@@ -33,38 +33,25 @@ class Tsv(FileFormat, MediaPreprocessor):
 
     def do_import(self, filename, extra_tag_names=None):
         FileFormat.do_import(self, filename, extra_tag_names)
-        # Open txt file. Use Universal line ending detection.
-        f = None
         try:
-            f = file(filename, "rU")
+            f = open(filename)
         except:
-            try:
-                f = file(filename.encode("latin", "rU"))
-            except:
-                self.main_widget().show_error(_("Could not load file."))
-                return
-        # Parse txt file.
+            self.main_widget().show_error(_("Could not load file."))
+            return
         facts_data = []
+        line_number = 0
         for line in f:
-            try:
-                line = unicode(line, "utf-8")
-            except:
-                try:
-                    line = unicode(line, "latin")
-                except:
-                    self.main_widget().show_error(\
-                        _("Could not determine encoding."))
-                    return
+            line_number += 1
             line = line.rstrip()
             # Parse html style escaped unicode (e.g. &#33267;).
             for match in re0.finditer(line):
                 # Integer part.
-                u = unichr(int(match.group(1)))
+                u = chr(int(match.group(1)))
                 # Integer part with &# and ;.
                 line = line.replace(match.group(), u)
             if len(line) == 0:
                 continue
-            if line[0] == u"\ufeff": # Remove byte-order mark.
+            if line[0] == "\\ufeff": # Remove byte-order mark.
                 line = line[1:]
             fields = line.split("\t")
             if len(fields) >= 3:  # Vocabulary card.
@@ -75,10 +62,10 @@ class Tsv(FileFormat, MediaPreprocessor):
                     facts_data.append({"f": fields[0], "p_1": fields[1],
                         "m_1": fields[2]})
             elif len(fields) == 2:  # Front-to-back only.
-                facts_data.append({"f": fields[0], "b": fields[1]})
+                facts_data.append({"f": fields[0], "b": fields[1]})               
             else:  # Malformed line.
-                self.main_widget().show_error(\
-                    _("Missing answer on line:\n") + line)
+                self.main_widget().show_error(_("Badly formed input on line") \
+                    + " " + str(line_number) + ":\n" + line)
                 return
         # Now that we know all the data is well-formed, create the cards.
         tag_names = []
@@ -86,7 +73,7 @@ class Tsv(FileFormat, MediaPreprocessor):
             tag_names += [tag_name.strip() for tag_name \
                 in extra_tag_names.split(",")]
         for fact_data in facts_data:
-            if len(fact_data.keys()) == 2:
+            if len(list(fact_data.keys())) == 2:
                 card_type = self.card_type_with_id("1")
             else:
                 card_type = self.card_type_with_id("3")
@@ -98,7 +85,7 @@ class Tsv(FileFormat, MediaPreprocessor):
         self.warned_about_missing_media = False
 
     def process_string_for_text_export(self, text):
-        text = text.encode("utf-8").replace("\n", "<br>").replace("\t", " ")
+        text = text.replace("\n", "<br>").replace("\t", " ")
         if text == "":
             text = "<br>"
         return text
@@ -112,7 +99,7 @@ class Tsv(FileFormat, MediaPreprocessor):
         number_of_cards = db.active_count()
         w.set_progress_range(number_of_cards)
         w.set_progress_update_interval(number_of_cards/50)
-        outfile = file(filename, "w")
+        outfile = open(filename, "w")
         for _card_id, _fact_id in db.active_cards():
             card = db.card(_card_id, is_id_internal=True)
             q = self.process_string_for_text_export(\

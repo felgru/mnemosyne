@@ -2,7 +2,7 @@
 # edit_card_dlg.py <Peter.Bienstman@UGent.be>
 #
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.add_cards_dlg import AddEditCards
@@ -10,8 +10,8 @@ from mnemosyne.pyqt_ui.ui_edit_card_dlg import Ui_EditCardDlg
 from mnemosyne.libmnemosyne.ui_components.dialogs import EditCardDialog
 
 
-class EditCardDlg(QtGui.QDialog, Ui_EditCardDlg, AddEditCards,
-                  EditCardDialog):
+class EditCardDlg(QtWidgets.QDialog, AddEditCards,
+                  EditCardDialog, Ui_EditCardDlg):
 
     page_up_down_signal = QtCore.pyqtSignal(int)
     UP = 0
@@ -28,16 +28,15 @@ class EditCardDlg(QtGui.QDialog, Ui_EditCardDlg, AddEditCards,
             else:
                 return False
         return False
-
-    def __init__(self, card, component_manager, allow_cancel=True,
-                 started_from_card_browser=False, parent=None):
+    
+    def __init__(self, card, allow_cancel=True, 
+                 started_from_card_browser=False, parent=None, **kwds):
+        super().__init__(**kwds)        
         # Note: even though this is in essence an EditFactDlg, we don't use
         # 'fact' as argument, as 'fact' does not know anything about card
         # types.
-        AddEditCards.__init__(self, component_manager)
         if parent is None:
             parent = self.main_widget()
-        QtGui.QDialog.__init__(self, parent)
         self.setupUi(self)
         self.setWindowFlags(self.windowFlags() \
             | QtCore.Qt.WindowMinMaxButtonsHint)
@@ -45,6 +44,7 @@ class EditCardDlg(QtGui.QDialog, Ui_EditCardDlg, AddEditCards,
             & ~ QtCore.Qt.WindowContextHelpButtonHint)
         self.started_from_card_browser = started_from_card_browser
         self.before_apply_hook = None
+        self.after_apply_hook = None
         self.allow_cancel = allow_cancel
         if not allow_cancel:
             self.exit_button.setVisible(False)
@@ -54,6 +54,7 @@ class EditCardDlg(QtGui.QDialog, Ui_EditCardDlg, AddEditCards,
         state = self.config()["edit_card_dlg_state"]
         if state:
             self.restoreGeometry(state)
+        self.review_widget().stop_media()
         # Make sure we can capture PageUp/PageDown keys before any of the
         # children (e.g. comboboxes) do so.
         if self.started_from_card_browser:
@@ -72,14 +73,14 @@ class EditCardDlg(QtGui.QDialog, Ui_EditCardDlg, AddEditCards,
     def set_new_card(self, card):
         # Called from card browser.
         self.card = card
-        self.card_types_widget.currentIndexChanged[QtCore.QString].\
+        self.card_types_widget.currentIndexChanged[str].\
             disconnect(self.card_type_changed)
         for i in range(self.card_types_widget.count()):
-            if unicode(self.card_types_widget.itemText(i)) \
+            if self.card_types_widget.itemText(i) \
                 == _(card.card_type.name):
                 self.card_types_widget.setCurrentIndex(i)
                 break
-        self.card_types_widget.currentIndexChanged[QtCore.QString].\
+        self.card_types_widget.currentIndexChanged[str].\
             connect(self.card_type_changed)
         self.update_card_widget(keep_data_from_previous_widget=False)
         self.update_tags_combobox(self.card.tag_string())
@@ -118,50 +119,68 @@ class EditCardDlg(QtGui.QDialog, Ui_EditCardDlg, AddEditCards,
             elif event.key() == QtCore.Qt.Key_P:
                 self.preview()
         else:
-            QtGui.QDialog.keyPressEvent(self, event)
+            QtWidgets.QDialog.keyPressEvent(self, event)
 
     def set_valid(self, valid):
         self.OK_button.setEnabled(valid)
         self.preview_button.setEnabled(valid)
-
-    def accept(self):
-        self._store_state()
+        
+    def is_changed(self):
+        if self.previous_card_type_name != \
+           self.card_types_widget.currentText():
+            return True
+        if self.previous_tags != self.tags.currentText():
+            return True
+        changed = False
+        for fact_key in self.card.card_type.fact_keys():
+            if fact_key in self.card_type_widget.fact_data():
+                if fact_key in self.card.fact.data:
+                    previous_content = self.card.fact.data[fact_key]
+                else:
+                    previous_content = ""
+                if self.card_type_widget.fact_data()[fact_key] \
+                   != previous_content:
+                    return True
+        return False   
+        
+    def apply_changes(self):
+        if self.is_changed() == False:
+            return 0
         new_fact_data = self.card_type_widget.fact_data()
         new_tag_names = [tag.strip() for tag in \
-            unicode(self.tags.currentText()).split(',')]
-        new_card_type_name = unicode(self.card_types_widget.currentText())
+            self.tags.currentText().split(',')]
+        new_card_type_name = self.card_types_widget.currentText()
         new_card_type = self.card_type_by_name[new_card_type_name]
         if new_fact_data == self.card.fact.data and \
             ", ".join(new_tag_names) == self.card.tag_string() and \
-            new_card_type == self.card.card_type:
-                # No need to update the dialog.
-                QtGui.QDialog.reject(self)
-                return
+            new_card_type == self.card.card_type and self.allow_cancel == True:
+                # No need to update the dialog, except when we're merging 
+                # a card when 'allow_cancel' is False.
+                QtWidgets.QDialog.reject(self)
+                return -1
+        # If this is called from the card browser, call this hook to unload
+        # the Qt database.
         if self.before_apply_hook:
             self.before_apply_hook()
-        status = self.controller().edit_sister_cards(self.card.fact,
-            new_fact_data, self.card.card_type, new_card_type, new_tag_names,
-            self.correspondence)
+        status = self.controller().edit_card_and_sisters(self.card, 
+            new_fact_data, new_card_type, new_tag_names, self.correspondence)
+        if self.after_apply_hook:
+            self.after_apply_hook()        
+        return status
+
+    def accept(self):
+        self._store_state()
+        status = self.apply_changes()
         if status == 0:
-            tag_text = ", ".join(new_tag_names)
-            self.config()["last_used_tags_for_card_type_id"][new_card_type.id] \
-                = tag_text
             self.config()["edit_widget_size"] = (self.width(), self.height())
-            QtGui.QDialog.accept(self)
+            QtWidgets.QDialog.accept(self)
 
     def reject(self):  # Override 'add cards' behaviour.
-        changed = False
-        for fact_key in self.card.fact.data:
-            if fact_key in self.card_type_widget.fact_data() and \
-                self.card_type_widget.fact_data()[fact_key] \
-                != self.card.fact.data[fact_key]:
-                changed = True
-                break
-        if changed:
+        if self.is_changed() == True:
             status = self.main_widget().show_question(\
                 _("Abandon changes to current card?"), _("&Yes"), _("&No"), "")
             if status == 0:
-                QtGui.QDialog.reject(self)
+                QtWidgets.QDialog.reject(self)
                 return
         else:
-           QtGui.QDialog.reject(self)
+           QtWidgets.QDialog.reject(self)

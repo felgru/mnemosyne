@@ -1,6 +1,7 @@
 ChangeLog
 MANIFEST.in
 README
+makefile
 mnemosyne.desktop
 setup.py
 Mnemosyne.egg-info/PKG-INFO
@@ -8,7 +9,9 @@ Mnemosyne.egg-info/SOURCES.txt
 Mnemosyne.egg-info/dependency_links.txt
 Mnemosyne.egg-info/top_level.txt
 mnemosyne/__init__.py
+mnemosyne/config.py
 mnemosyne/version.py
+mnemosyne/pyqt_ui/mnemosyne
 mnemosyne/example_plugins/README
 mnemosyne/example_plugins/add_menu_item.py
 mnemosyne/example_plugins/after_repetition.py
@@ -33,6 +36,7 @@ mnemosyne/example_scripts/export_to_mp3.py
 mnemosyne/example_scripts/export_to_pdf.py
 mnemosyne/example_scripts/find_and_replace.py
 mnemosyne/example_scripts/import_rosetta_stone.py
+mnemosyne/example_scripts/update_modification time.py
 mnemosyne/libmnemosyne/__init__.py
 mnemosyne/libmnemosyne/card.py
 mnemosyne/libmnemosyne/card_type.py
@@ -171,12 +175,14 @@ mnemosyne/libmnemosyne/file_formats/mnemosyne1.py
 mnemosyne/libmnemosyne/file_formats/mnemosyne1_mem.py
 mnemosyne/libmnemosyne/file_formats/mnemosyne1_xml.py
 mnemosyne/libmnemosyne/file_formats/mnemosyne2_cards.py
+mnemosyne/libmnemosyne/file_formats/mnemosyne2_db.py
 mnemosyne/libmnemosyne/file_formats/science_log_parser.py
 mnemosyne/libmnemosyne/file_formats/smconv_XML.py
 mnemosyne/libmnemosyne/file_formats/supermemo_7_txt.py
 mnemosyne/libmnemosyne/file_formats/tsv.py
 mnemosyne/libmnemosyne/filters/RTL_handler.py
 mnemosyne/libmnemosyne/filters/__init__.py
+mnemosyne/libmnemosyne/filters/embed_images.py
 mnemosyne/libmnemosyne/filters/escape_to_html.py
 mnemosyne/libmnemosyne/filters/escape_to_html_for_card_browser.py
 mnemosyne/libmnemosyne/filters/expand_paths.py
@@ -205,6 +211,7 @@ mnemosyne/libmnemosyne/schedulers/__init__.py
 mnemosyne/libmnemosyne/schedulers/cramming.py
 mnemosyne/libmnemosyne/statistics_pages/__init__.py
 mnemosyne/libmnemosyne/statistics_pages/cards_added.py
+mnemosyne/libmnemosyne/statistics_pages/cards_learned.py
 mnemosyne/libmnemosyne/statistics_pages/current_card.py
 mnemosyne/libmnemosyne/statistics_pages/easiness.py
 mnemosyne/libmnemosyne/statistics_pages/grades.py
@@ -218,11 +225,14 @@ mnemosyne/libmnemosyne/ui_components/card_type_widget.py
 mnemosyne/libmnemosyne/ui_components/configuration_widget.py
 mnemosyne/libmnemosyne/ui_components/criterion_widget.py
 mnemosyne/libmnemosyne/ui_components/dialogs.py
+mnemosyne/libmnemosyne/ui_components/headless_review_widget.py
 mnemosyne/libmnemosyne/ui_components/main_widget.py
 mnemosyne/libmnemosyne/ui_components/review_widget.py
 mnemosyne/libmnemosyne/ui_components/statistics_widget.py
 mnemosyne/libmnemosyne/upgrades/__init__.py
 mnemosyne/libmnemosyne/upgrades/upgrade1.py
+mnemosyne/libmnemosyne/upgrades/upgrade2.py
+mnemosyne/libmnemosyne/upgrades/upgrade3.py
 mnemosyne/pyqt_ui/__init__.py
 mnemosyne/pyqt_ui/about_dlg.py
 mnemosyne/pyqt_ui/activate_cards_dlg.py
@@ -235,12 +245,13 @@ mnemosyne/pyqt_ui/card_type_wdgt_generic.py
 mnemosyne/pyqt_ui/change_card_type_dlg.py
 mnemosyne/pyqt_ui/clone_card_type_dlg.py
 mnemosyne/pyqt_ui/compact_database_dlg.py
+mnemosyne/pyqt_ui/completion_combo_box.py
 mnemosyne/pyqt_ui/configuration.py
 mnemosyne/pyqt_ui/configuration_dlg.py
 mnemosyne/pyqt_ui/configuration_wdgt_card_appearance.py
 mnemosyne/pyqt_ui/configuration_wdgt_cramming.py
 mnemosyne/pyqt_ui/configuration_wdgt_main.py
-mnemosyne/pyqt_ui/configuration_wdgt_sync_server.py
+mnemosyne/pyqt_ui/configuration_wdgt_servers.py
 mnemosyne/pyqt_ui/convert_card_type_keys_dlg.py
 mnemosyne/pyqt_ui/criterion_wdgt_default.py
 mnemosyne/pyqt_ui/delete_unused_media_files_dlg.py
@@ -252,7 +263,6 @@ mnemosyne/pyqt_ui/import_dlg.py
 mnemosyne/pyqt_ui/main_wdgt.py
 mnemosyne/pyqt_ui/manage_card_types_dlg.py
 mnemosyne/pyqt_ui/manage_plugins_dlg.py
-mnemosyne/pyqt_ui/mnemosyne
 mnemosyne/pyqt_ui/mnemosyne_rc.py
 mnemosyne/pyqt_ui/mplayer_audio.py
 mnemosyne/pyqt_ui/mplayer_video.py
@@ -262,8 +272,9 @@ mnemosyne/pyqt_ui/pyqt_render_chain.py
 mnemosyne/pyqt_ui/qpushbutton2.py
 mnemosyne/pyqt_ui/qt_sync_server.py
 mnemosyne/pyqt_ui/qt_translator.py
+mnemosyne/pyqt_ui/qt_web_server.py
 mnemosyne/pyqt_ui/qtextedit2.py
-mnemosyne/pyqt_ui/qwebview2.py
+mnemosyne/pyqt_ui/qwebengineview2.py
 mnemosyne/pyqt_ui/remove_tags_dlg.py
 mnemosyne/pyqt_ui/review_wdgt.py
 mnemosyne/pyqt_ui/review_wdgt_cramming.py
@@ -271,6 +282,7 @@ mnemosyne/pyqt_ui/statistics_dlg.py
 mnemosyne/pyqt_ui/statistics_wdgt_html.py
 mnemosyne/pyqt_ui/statistics_wdgts_plotting.py
 mnemosyne/pyqt_ui/sync_dlg.py
+mnemosyne/pyqt_ui/tag_line_edit.py
 mnemosyne/pyqt_ui/tag_tree_wdgt.py
 mnemosyne/pyqt_ui/tip_after_starting_n_times.py
 mnemosyne/pyqt_ui/tip_dlg.py
@@ -287,7 +299,7 @@ mnemosyne/pyqt_ui/ui_configuration_dlg.py
 mnemosyne/pyqt_ui/ui_configuration_wdgt_card_appearance.py
 mnemosyne/pyqt_ui/ui_configuration_wdgt_cramming.py
 mnemosyne/pyqt_ui/ui_configuration_wdgt_main.py
-mnemosyne/pyqt_ui/ui_configuration_wdgt_sync_server.py
+mnemosyne/pyqt_ui/ui_configuration_wdgt_servers.py
 mnemosyne/pyqt_ui/ui_convert_card_type_keys_dlg.py
 mnemosyne/pyqt_ui/ui_criterion_wdgt_default.py
 mnemosyne/pyqt_ui/ui_delete_unused_media_files_dlg.py
@@ -340,12 +352,15 @@ mnemosyne/pyqt_ui/pixmaps/statistics.png
 mnemosyne/pyqt_ui/pixmaps/tags.png
 mnemosyne/pyqt_ui/pixmaps/underline.png
 mnemosyne/script/__init__.py
-mnemosyne/webserver/__init__.py
-mnemosyne/webserver/mnemosyne-webserver
-mnemosyne/webserver/review_wdgt.py
-mnemosyne/webserver/server.py
-mnemosyne/webserver/webserver_render_chain.py
-mnemosyne/webserver/webserver_renderer.py
+mnemosyne/web_server/__init__.py
+mnemosyne/web_server/jquery_mb_html5_audio.py
+mnemosyne/web_server/review_wdgt.py
+mnemosyne/web_server/simple_html5_audio.py
+mnemosyne/web_server/web_server.py
+mnemosyne/web_server/web_server_render_chain.py
+mnemosyne/web_server/web_server_renderer.py
+mo/ca@valencia/LC_MESSAGES/mnemosyne.mo
+mo/ca/LC_MESSAGES/mnemosyne.mo
 mo/cs/LC_MESSAGES/mnemosyne.mo
 mo/da/LC_MESSAGES/mnemosyne.mo
 mo/de/LC_MESSAGES/mnemosyne.mo
@@ -366,7 +381,10 @@ mo/pl/LC_MESSAGES/mnemosyne.mo
 mo/pt/LC_MESSAGES/mnemosyne.mo
 mo/pt_BR/LC_MESSAGES/mnemosyne.mo
 mo/ru/LC_MESSAGES/mnemosyne.mo
+mo/sr/LC_MESSAGES/mnemosyne.mo
+mo/sv/LC_MESSAGES/mnemosyne.mo
 mo/tr/LC_MESSAGES/mnemosyne.mo
+mo/uk/LC_MESSAGES/mnemosyne.mo
 mo/zh_CN/LC_MESSAGES/mnemosyne.mo
 mo/zh_HK/LC_MESSAGES/mnemosyne.mo
 mo/zh_TW/LC_MESSAGES/mnemosyne.mo

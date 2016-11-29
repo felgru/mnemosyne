@@ -12,8 +12,8 @@ class Grades(PlotStatisticsPage):
 
     ALL_CARDS = -1
 
-    def __init__(self, component_manager):
-        PlotStatisticsPage.__init__(self, component_manager)
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
         self.variants = [(self.ALL_CARDS, _("All cards"))]
         self.tag_with_internal_id = {}
         for tag in self.database().tags():
@@ -23,7 +23,7 @@ class Grades(PlotStatisticsPage):
             self.variants.append((tag._id, tag.name))
 
     def prepare_statistics(self, variant):
-        self.x = range(-1, 6)
+        self.x = list(range(-1, 6))
         if variant == self.ALL_CARDS:
             self.y = [self.database().card_count_for_grade \
                 (grade, active_only=False) for grade in self.x]

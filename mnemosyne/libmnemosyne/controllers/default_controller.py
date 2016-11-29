@@ -14,6 +14,9 @@ from mnemosyne.libmnemosyne.controller import Controller
 from mnemosyne.libmnemosyne.utils import remove_empty_dirs_in
 from mnemosyne.libmnemosyne.utils import expand_path, contract_path
 
+HOUR = 60 * 60 # Seconds in an hour.
+DAY = 24 * HOUR # Seconds in a day.
+
 
 class DefaultController(Controller):
 
@@ -60,19 +63,28 @@ class DefaultController(Controller):
             self.config().save()
             self.review_controller().reset()
             self.next_rollover = self.database().start_of_day_n_days_ago(n=-1)
+        if time.time() > self.config()["last_db_maintenance"] + 90 * DAY:
+            self.component_manager.current("database_maintenance").run()        
+            self.config()["last_db_maintenance"] = time.time()
+            self.config().save()
 
     def update_title(self):
         title = _("Mnemosyne")
-        database_name = self.database().display_name()
-        if database_name and database_name != self.database().default_name:
+        db = self.database()
+        database_name = db.display_name()
+        if database_name and database_name != db.default_name:
             title += " - " + database_name
+        if db.current_criterion() and \
+            db.current_criterion().name and \
+            db.current_criterion().name != db.default_criterion_name:
+            title += " - " + db.current_criterion().name
         self.main_widget().set_window_title(title)
 
     def show_add_cards_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("add_cards_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         # This dialog calls 'create_new_cards' at some point.
         self.database().save()
         review_controller = self.review_controller()
@@ -182,14 +194,15 @@ class DefaultController(Controller):
             self.review_controller().reset()
         return cards
 
-    def show_edit_card_dialog(self):
+    def show_edit_card_dialog(self): 
         self.stopwatch().pause()
         self.flush_sync_server()
         review_controller = self.review_controller()
-        # This dialog calls 'edit_sister_cards' at some point.
+        # This dialog calls 'edit_card_and_sisters' at some point.
         state = review_controller.state()
         accepted = self.component_manager.current("edit_card_dialog")\
-            (review_controller.card, self.component_manager).activate()
+            (review_controller.card, 
+             component_manager=self.component_manager).activate()
         if not accepted:
             self.stopwatch().unpause()
             return
@@ -212,9 +225,11 @@ class DefaultController(Controller):
     def _change_card_type(self, fact, old_card_type, new_card_type,
                           correspondence, new_fact_data, warn=True):
 
-        """This is an internal function, used by 'edit_sister_cards' and
+        """This is an internal function, used by 'edit_card_and_sisters' and
         'change_card_type'. It should not be called from the outside by
         itself, otherwise the database will not be saved.
+        
+        Returns -2 for error, -1 for cancel and 0 for success.
 
         """
 
@@ -223,7 +238,11 @@ class DefaultController(Controller):
         db = self.database()
         cards_from_fact = db.cards_from_fact(fact)
         assert cards_from_fact[0].card_type == old_card_type
-        assert new_card_type.is_fact_data_valid(new_fact_data)
+        if not new_card_type.is_fact_data_valid(new_fact_data):
+            self.main_widget().show_error(\
+                _("Card data not correctly formatted for conversion.\n\nSkipping ") +\
+                "|".join(list(fact.data.values())) + ".\n")
+            return -2
         converter = self.component_manager.current\
               ("card_type_converter", used_for=(old_card_type.__class__,
                                                 new_card_type.__class__))
@@ -272,6 +291,7 @@ class DefaultController(Controller):
                 # We've created a new fact here. Make sure the calling function
                 # has the information to reload the fact.
                 fact._id = new_cards[0].fact._id
+                fact.id = new_cards[0].fact.id
                 if is_currently_asked:
                     self.review_controller().card = new_cards[0]
                 return 0
@@ -303,49 +323,62 @@ class DefaultController(Controller):
                 self.review_controller().reset()
             return 0
 
-    def edit_sister_cards(self, fact, new_fact_data, old_card_type,
-            new_card_type, new_tag_names, correspondence):
+    def edit_card_and_sisters(self, card, new_fact_data, new_card_type,
+            new_tag_names, correspondence):
         db = self.database()
         sch = self.scheduler()
         assert new_card_type.is_fact_data_valid(new_fact_data)
+        # Determine the current tags in use for the sister cards. This
+        # needs to be done before e.g. editing a cloze card creates new
+        # cards which are as yet untagged.
+        fact = db.fact(card.fact._id, is_id_internal=True)
+        current_sister_cards = self.database().cards_from_fact(fact)
+        current_tag_strings = set([sister_card.tag_string() \
+            for sister_card in current_sister_cards])        
         # Change the card type if needed. This does not take into account
         # changes to fact yet, which will come just afterwards.
-        result = self._change_card_type(fact, old_card_type, new_card_type,
-            correspondence, new_fact_data)
-        if result == -1:  # Aborted.
-            return -1
+        result = self._change_card_type(card.fact, card.card_type,
+            new_card_type, correspondence, new_fact_data)
+        if result in [-2, -1]:  # Error, aborted.
+            return result
         # When there was no card type conversion possible, the cards had to
         # be recreated from the new fact data. In that case, it is needed to
         # reload the fact from the database.
-        fact = db.fact(fact._id, is_id_internal=True)
+        fact = db.fact(card.fact._id, is_id_internal=True)
         # Update fact and create, delete and update cards.
         new_cards, edited_cards, deleted_cards = \
-            new_card_type.edit_sister_cards(fact, new_fact_data)
+            new_card_type.edit_fact(fact, new_fact_data)
         fact.data = new_fact_data
         db.update_fact(fact)
-        for card in deleted_cards:
-            if self.review_controller().card == card:
+        for deleted_card in deleted_cards:
+            if self.review_controller().card == deleted_card:
                 self.review_controller().card = None
-            sch.remove_from_queue_if_present(card)
-            db.delete_card(card)
-        for card in new_cards:
-            db.add_card(card)
-        for card in edited_cards:
-            db.update_card(card)
+            sch.remove_from_queue_if_present(deleted_card)
+            db.delete_card(deleted_card)
+        for new_card in new_cards:
+            db.add_card(new_card)
+        for edited_card in edited_cards:
+            db.update_card(edited_card)
         if new_cards and self.review_controller().learning_ahead == True:
             self.review_controller().reset()
         # Apply new tags and modification time to cards and save them back to
         # the database. Note that this makes sure there is an EDITED_CARD log
         # entry for each sister card, which is needed when syncing with a
         # partner that does not have the concept of facts.
+        tag_for_current_card_only = False
+        if len(current_tag_strings) > 1:
+            tag_for_current_card_only = bool(self.main_widget().show_question(
+            _("This card has different tags than its sister cards. Update tags for current card only or for all sister cards?"),
+            _("Current card only"), _("All sister cards"), "") == 0)
         old_tags = set()
         tags = db.get_or_create_tags_with_names(new_tag_names)
         modification_time = int(time.time())
-        for card in self.database().cards_from_fact(fact):
-            card.modification_time = modification_time
-            old_tags = old_tags.union(card.tags)
-            card.tags = tags
-            db.update_card(card)
+        for sister_card in self.database().cards_from_fact(fact):
+            sister_card.modification_time = modification_time
+            if sister_card == card or not tag_for_current_card_only:
+                old_tags = old_tags.union(sister_card.tags)
+                sister_card.tags = tags
+            db.update_card(sister_card)
         for tag in old_tags:
             db.delete_tag_if_unused(tag)
         db.save()
@@ -365,23 +398,42 @@ class DefaultController(Controller):
         for fact in facts:
             if correspondence:
                 new_fact_data = {}
-                for old_fact_key, new_fact_key in correspondence.iteritems():
-                    new_fact_data[new_fact_key] = fact[old_fact_key]
-                assert new_card_type.is_fact_data_valid(new_fact_data)
-                fact.data = new_fact_data
+                for old_fact_key, new_fact_key in correspondence.items():
+                    if old_fact_key in fact:
+                        new_fact_data[new_fact_key] = fact[old_fact_key]
+                if new_card_type.is_fact_data_valid(new_fact_data):
+                    fact.data = new_fact_data
             else:
-                new_fact_data = copy.copy(fact.data)
+                new_fact_data = copy.copy(fact.data)  
             result = self._change_card_type(fact, old_card_type,
-                new_card_type, correspondence, new_fact_data, warn)
-            if result == -1:
+                    new_card_type, correspondence, new_fact_data, warn)
+            if result == -1:  # Cancel.
                 w.close_progress()
-                return
-            if correspondence:
-                db.update_fact(fact)
+                return                    
+            if correspondence and result != -2:  # Error. 
+                db.update_fact(fact)              
             warn = False
             w.increase_progress(1)
         db.save()
         w.close_progress()
+
+    def star_current_card(self):
+        self.stopwatch().pause()
+        self.flush_sync_server()
+        if self.config()["star_help_shown"] == False:
+            self.main_widget().show_information(\
+_("This will add a tag 'Starred' to the current card, so that you can find it back easily, e.g. to edit it on a desktop."))
+            self.config()["star_help_shown"] = True        
+        db = self.database()
+        review_controller = self.review_controller()
+        tag = db.get_or_create_tag_with_name(_("Starred"))
+        _sister_card_ids = [card._id for card in \
+            self.database().cards_from_fact(review_controller.card.fact)]
+        db.add_tag_to_cards_with_internal_ids(tag, _sister_card_ids)
+        review_controller.card = \
+            db.card(review_controller.card._id, is_id_internal=True)
+        review_controller.update_dialog(redraw_all=True)
+        self.stopwatch().unpause()
 
     def delete_current_card(self):
         self.stopwatch().pause()
@@ -412,6 +464,7 @@ class DefaultController(Controller):
         self.stopwatch().unpause()
 
     def delete_facts_and_their_cards(self, facts, progress_bar=True):
+        assert len(facts) == len([fact.id for fact in facts])
         db = self.database()
         w = self.main_widget()
         if progress_bar:
@@ -493,13 +546,14 @@ class DefaultController(Controller):
         self.database().update_card_type(card_type)
         self.database().save()
 
-    single_database_help = _("It is recommended to put all your cards in a single database. Using tags to determine which cards to study is much more convenient than having to load and unload several databases.")
+    single_database_help = \
+_("It is recommended to put all your cards in a single database. Using tags to determine which cards to study is much more convenient than having to load and unload several databases.")
 
     def show_new_file_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
         if self.config()["single_database_help_shown"] == False:
-            self.main_widget().show_information(_(self.single_database_help))
+            self.main_widget().show_information(self.single_database_help)
             self.config()["single_database_help_shown"] = True
         db = self.database()
         suffix = db.suffix
@@ -519,12 +573,12 @@ class DefaultController(Controller):
             import shutil
             shutil.rmtree(filename + "_media")
         db.new(filename)
+        self.main_widget().close_progress()
         db.load(self.config()["last_database"])
         self.log().loaded_database()
         self.review_controller().reset()
         self.review_controller().update_dialog()
         self.update_title()
-        self.main_widget().close_progress()
         self.stopwatch().unpause()
 
     def show_open_file_dialog(self):
@@ -538,7 +592,18 @@ class DefaultController(Controller):
         if not filename:
             self.stopwatch().unpause()
             return
-        if filename.startswith(os.path.join(data_dir, "backups")):
+        if filename.endswith(".cards"):
+            self.stopwatch().unpause()
+            self.main_widget().show_information(\
+_("'*.cards' files are not separate databases, but need to be imported in your current database through 'File - Import'."))
+            return
+        if filename.endswith("config.db"):
+            self.stopwatch().unpause()
+            self.main_widget().show_information(\
+                _("The configuration database is not used to store cards."))
+            return
+        if os.path.normpath(filename).startswith(\
+            os.path.normpath(os.path.join(data_dir, "backups"))):
             result = self.main_widget().show_question(\
                 _("Do you want to replace your current database with one restored from this backup?\nNote that this will result in conflicts during the next sync, which need to be resolved by a full sync."),
                 _("Yes"), _("No"), "")
@@ -551,20 +616,23 @@ class DefaultController(Controller):
                 self.update_title()
             self.stopwatch().unpause()
             return
-        try:
-            self.log().saved_database()
-            db.backup()
-            db.unload()
-        except RuntimeError, error:
-            self.main_widget().show_error(unicode(error.message))
-            self.stopwatch().unpause()
-            return
+        if self.database().is_loaded():
+            try:
+                self.log().saved_database()
+                db.backup()
+                db.unload()
+            except RuntimeError as error:
+                self.main_widget().show_error(str(error))
+                self.stopwatch().unpause()
+                return
         try:
             db.load(filename)
             self.log().loaded_database()
             self.log().future_schedule()
-        except Exception, error:
-            self.main_widget().show_error(unicode(error.message))
+        except Exception as error:
+            self.main_widget().show_error(str(error))
+            db.abandon()
+            db.load(old_path)
             self.stopwatch().unpause()
             return
         self.review_controller().reset()
@@ -574,11 +642,16 @@ class DefaultController(Controller):
     def save_file(self):
         self.stopwatch().pause()
         self.flush_sync_server()
+        if self.config()["save_database_help_shown"] == False:
+            self.main_widget().show_information(\
+_("Your database will be autosaved before exiting. Also, it is saved every couple of repetitions, as set in the configuration options."))
+            self.config()["save_database_help_shown"] = True
         try:
             self.database().save()
             self.log().saved_database()
-        except RuntimeError, error:
-            self.main_widget().show_error(unicode(error.message))
+            self.main_widget().show_information(_("Database saved."))
+        except RuntimeError as error:
+            self.main_widget().show_error(str(error))
         self.stopwatch().unpause()
 
     def show_save_file_as_dialog(self):
@@ -595,6 +668,11 @@ class DefaultController(Controller):
         if not filename:
             self.stopwatch().unpause()
             return
+        if filename.endswith("config.db"):
+            self.main_widget().show_information(\
+_("The configuration database cannot be used to store cards."))
+            self.stopwatch().unpause()
+            return          
         if not filename.endswith(suffix):
             filename += suffix
         try:
@@ -606,8 +684,8 @@ class DefaultController(Controller):
                 shutil.rmtree(new_media_dir)
             shutil.copytree(old_media_dir, new_media_dir)
             self.log().saved_database()
-        except RuntimeError, error:
-            self.main_widget().show_error(unicode(error.message))
+        except RuntimeError as error:
+            self.main_widget().show_error(str(error))
             self.stopwatch().unpause()
             return
         self.review_controller().update_dialog()
@@ -618,10 +696,10 @@ class DefaultController(Controller):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("compact_database_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.review_controller().reset_but_try_to_keep_current_card()
-        self.stopwatch().unpause()
-
+        self.stopwatch().unpause()       
+            
     def show_insert_img_dialog(self, filter):
 
         """Show a file dialog filtered on the supported filetypes, get a
@@ -635,7 +713,8 @@ class DefaultController(Controller):
         """
 
         from mnemosyne.libmnemosyne.utils import copy_file_to_dir
-        data_dir, media_dir = self.config().data_dir, self.database().media_dir()
+        data_dir, media_dir = \
+            self.config().data_dir, self.database().media_dir()
         path = expand_path(self.config()["import_img_dir"], data_dir)
         filter = _("Image files") + " " + filter
         filename = self.main_widget().get_filename_to_open(\
@@ -698,24 +777,35 @@ class DefaultController(Controller):
         self.flush_sync_server()
         review_controller = self.review_controller()
         self.component_manager.current("browse_cards_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         review_controller.reset_but_try_to_keep_current_card()
         review_controller.update_dialog(redraw_all=True)
         self.stopwatch().unpause()
 
     def show_activate_cards_dialog(self):
+        self.show_activate_cards_dialog_pre()
+        self.show_activate_cards_dialog_post()
+         
+    def show_activate_cards_dialog_pre(self):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("activate_cards_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
+        
+    def show_activate_cards_dialog_post(self):       
         review_controller = self.review_controller()
         review_controller.reset_but_try_to_keep_current_card()
         review_controller.update_status_bar_counters()
+        self.update_title()
         self.stopwatch().unpause()
 
     def find_duplicates(self):
         self.stopwatch().pause()
         self.flush_sync_server()
+        if self.config()["find_duplicates_help_shown"] == False:
+            self.main_widget().show_information(\
+_("This will tag all the cards in a given card type which have the same question. That way you can reformulate them to make the answer unambiguous. Note that this will not tag duplicates in different card types, e.g. card types for 'French' and 'Spanish'."))
+            self.config()["find_duplicates_help_shown"] = True
         self.database().tag_all_duplicates()
         review_controller = self.review_controller()
         review_controller.reset_but_try_to_keep_current_card()
@@ -726,7 +816,7 @@ class DefaultController(Controller):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("manage_plugins_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.review_controller().update_dialog(redraw_all=True)
         self.stopwatch().unpause()
 
@@ -751,7 +841,7 @@ class DefaultController(Controller):
         plugin_filename, plugin_class_name = None, None
         for filename in filenames:
             if filename.endswith(".py"):
-                text = file(os.path.join(plugin_dir, filename), "r").read()
+                text = open(os.path.join(plugin_dir, filename), "r").read()
                 match = re_plugin.match(text)
                 if match is not None:
                     plugin_filename = filename
@@ -761,11 +851,11 @@ class DefaultController(Controller):
             self.main_widget().show_error(_("No plugin found!"))
             return
         # Write manifest to allow uninstalling.
-        manifest = file(os.path.join(plugin_dir,
+        manifest = open(os.path.join(plugin_dir,
             plugin_class_name + ".manifest"), "w")
         for filename in filenames:
             if not os.path.isdir(os.path.join(plugin_dir, filename)):
-                print >> manifest, filename
+                print(filename, file=manifest)
         # Make sure we don't register a plugin twice.
         for plugin in self.plugins():
             if plugin.__class__.__name__ == plugin_class_name:
@@ -778,7 +868,8 @@ class DefaultController(Controller):
             if module_name in sys.modules:
                 del sys.modules[module_name]
             __import__(module_name)
-        except:
+        except Exception as e:
+            print(e)
             from mnemosyne.libmnemosyne.utils import traceback_string
             msg = _("Error when running plugin:") \
                 + "\n" + traceback_string()
@@ -793,13 +884,14 @@ class DefaultController(Controller):
         plugin_dir = os.path.join(self.config().data_dir, "plugins")
         manifest_filename = os.path.join(plugin_dir,
             plugin.__class__.__name__ + ".manifest")
-        manifest = file(manifest_filename, "r")
+        manifest = open(manifest_filename, "r")
         plugin_dir = os.path.join(self.config().data_dir, "plugins")
         for filename in manifest:
             filename = os.path.join(plugin_dir, filename.rstrip())
             os.remove(filename)
             if filename.endswith(".py") and os.path.exists(filename + "c"):
                 os.remove(filename + "c")
+        manifest.close()
         del plugin
         os.remove(manifest_filename)
         remove_empty_dirs_in(plugin_dir)
@@ -808,21 +900,21 @@ class DefaultController(Controller):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("manage_card_types_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.stopwatch().unpause()
 
     def show_statistics_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("statistics_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.stopwatch().unpause()
 
     def show_configuration_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("configuration_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.config().save()
         self.review_controller().reset_but_try_to_keep_current_card()
         self.review_controller().update_dialog(redraw_all=True)
@@ -832,7 +924,7 @@ class DefaultController(Controller):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("import_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.database().save()
         self.log().saved_database()
         review_controller = self.review_controller()
@@ -846,14 +938,14 @@ class DefaultController(Controller):
         self.stopwatch().pause()
         self.flush_sync_server()
         self.component_manager.current("export_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
         self.stopwatch().unpause()
 
     def show_export_metadata_dialog(self, metadata=None, read_only=False):
         self.stopwatch().pause()
         self.flush_sync_server()
         dialog = self.component_manager.current("export_metadata_dialog")\
-            (self.component_manager)
+            (component_manager=self.component_manager)
         if metadata:
             dialog.set_values(metadata)
         if read_only:
@@ -863,11 +955,17 @@ class DefaultController(Controller):
         return dialog.values()
 
     def show_sync_dialog(self):
+        self.show_sync_dialog_pre()
+        self.show_sync_dialog_post()
+        
+    def show_sync_dialog_pre(self): 
         self.stopwatch().pause()
         self.flush_sync_server()
         self.database().save()
         self.component_manager.current("sync_dialog")\
-            (self.component_manager).activate()
+            (component_manager=self.component_manager).activate()
+        
+    def show_sync_dialog_post(self):
         self.database().save()
         self.log().saved_database()
         self.review_controller().reset_but_try_to_keep_current_card()
@@ -891,7 +989,7 @@ class DefaultController(Controller):
             self.database().store_pregenerated_data
         client.do_backup = self.config()["backup_before_sync"]
         client.upload_science_logs = self.config()["upload_science_logs"]
-        try:
+        try:         
             client.sync(server, port, username, password)
         finally:
             client.database.release_connection()
@@ -925,20 +1023,20 @@ class DefaultController(Controller):
     def show_getting_started_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
-        self.component_manager.current("getting_started_dialog")(
-           self.component_manager).activate()
+        self.component_manager.current("getting_started_dialog")\
+            (component_manager=self.component_manager).activate()
         self.stopwatch().unpause()
 
     def show_tip_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
-        self.component_manager.current("tip_dialog")(
-            self.component_manager).activate()
+        self.component_manager.current("tip_dialog")\
+            (component_manager=self.component_manager).activate()
         self.stopwatch().unpause()
 
     def show_about_dialog(self):
         self.stopwatch().pause()
         self.flush_sync_server()
-        self.component_manager.current("about_dialog")(
-            self.component_manager).activate()
+        self.component_manager.current("about_dialog")\
+            (component_manager=self.component_manager).activate()
         self.stopwatch().unpause()

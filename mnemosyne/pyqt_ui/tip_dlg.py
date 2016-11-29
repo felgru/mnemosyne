@@ -2,18 +2,17 @@
 # tip_dlg.py <Johannes.Baiter@gmail.com>
 #
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.ui_tip_dlg import Ui_TipDlg
 from mnemosyne.libmnemosyne.ui_components.dialogs import TipDialog
 
 
-class TipDlg(QtGui.QDialog, Ui_TipDlg, TipDialog):
+class TipDlg(QtWidgets.QDialog, TipDialog, Ui_TipDlg):
 
-    def __init__(self, component_manager):
-        TipDialog.__init__(self, component_manager)
-        QtGui.QDialog.__init__(self, self.main_widget())
+    def __init__(self, **kwds):
+        super().__init__(**kwds)    
         self.tips = []
         self.tips.append(_("""For optimal results, it's best to do your repetitions every day."""))
         self.tips.append(_("""You don't need to finish all your daily scheduled repetitions in a single session."""))
@@ -34,15 +33,19 @@ class TipDlg(QtGui.QDialog, Ui_TipDlg, TipDialog):
         self.tips.append(_("""You can use basic HTML tags in your cards to control their appearance. However, if you want all the fields in a certain card type to look the same, it's easier to use the 'Set card appearance' menu option."""))
         self.tips.append(_("""Using 'File - Sync', you can sync this machine with a remote server. Of course, that remote computer needs to have a server running, which can be started from the configuration screen on that remote machine."""))
         self.tips.append(_(""" If you want to sync a mobile device with this computer, don't use 'File - Sync', but first enable a sync server in the configuration dialog, and then start the sync from the mobile device."""))
-        self.tips.append(_("""In the 'Activate cards' dialog, you can right-click on a saved set to rename or delete it."""))
+        self.tips.append(_("""In the 'Activate cards' dialog, you can right-click on a saved set to rename or delete it."""))    
         self.tips.append(_("""In the 'Activate cards' dialog, you can double-click on a saved set to activate it and close the dialog."""))
         self.tips.append(_("""Right-click on a tag name in the card browser to edit or delete it."""))
         self.tips.append(_("""Double-click on a card or tag name in the card browser to edit them."""))
         self.tips.append(_("""You can reorder columns in the card browser by dragging the header label."""))
         self.tips.append(_("""You can resize columns in the card browser by dragging between the header labels."""))
+        self.tips.append(_("""In the card browser, cards with strike-through text are inactive in the current set."""))
         self.tips.append(_("""When editing or previewing cards from the card browser, PageUp/PageDown can be used to move to the previous/next card."""))
+        self.tips.append(_("""In the search box of the card browser, you can use SQL wildcards like _ (matching a single character) and % (matching one or more characters)."""))
         self.tips.append(_("""In the 'Add cards' dialog, use Tab to move between different fields, Ctrl+Enter for 'Yet to learn', and Ctrl+2, etc. for the grades."""))
-        self.tips.append(_("""In the 'Edit card' dialog, use Tab to move between different fields and Ctrl+Enter to close the dialog."""))
+        self.tips.append(_("""In the 'Edit card' dialog, use Tab to move between different fields and Ctrl+Enter to close the dialog and accept the changes."""))
+        self.tips.append(_("""Double-click on the name of a saved set in '(De)activate cards' to quickly activate it and close the dialog."""))
+        self.tips.append(_("""If you single-click the name of a saved set in '(De)activate cards', modifications to the selected tags and card types are not saved to that set unless you press 'Save this set for later use' again. This allows you to make some quick-and-dirty temporary modifications."""))
         self.tips.append(_("""Mnemosyne can use LaTeX to render mathematical formulas, e.g. <$>x^2+y^2=z^2</$>. (For this, you need LaTeX and dvipng installed.)"""))
         self.tips.append(_("""The best way to backup your data is to copy your mnemosyne data directory and move it to a different drive. Mnemosyne keeps automatic backups, but that won't help you if that drive dies..."""))
         self.tips.append(_("""You can sort the cards in the 'Browse cards' dialog by by clicking on a column title. Clicking again changes the sort order."""))
@@ -53,6 +56,7 @@ class TipDlg(QtGui.QDialog, Ui_TipDlg, TipDialog):
         self.tips.append(_("""Advanced users can customise more of Mnemosyne by editing the config.py file in their mnemosyne directory. They can also install additional plugins to customise Mnemosyne even further."""))
         self.tips.append(_("""You can follow the development of Mnemosyne at <a href="https://plus.google.com/b/112456861177827156549/112456861177827156549/posts">Google+</a>."""))
         self.tips.append(_("""You can request new features and vote for exisiting requests at <a href="https://mnemosyne.uservoice.com/">uservoice</a>. This helps the developers decide what to work on next."""))
+
         self.setupUi(self)
         self.setWindowFlags(self.windowFlags() \
             | QtCore.Qt.WindowMinMaxButtonsHint)
@@ -71,7 +75,7 @@ class TipDlg(QtGui.QDialog, Ui_TipDlg, TipDialog):
 
     def activate(self):
         TipDialog.activate(self)
-        self.show()
+        self.exec_()
 
     def update_dialog(self):
         # We need an extra modulo operation here to deal with the possibility

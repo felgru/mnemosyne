@@ -2,26 +2,35 @@
 # activate_cards_dlg.py <Peter.Bienstman@UGent.be>
 #
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.pyqt_ui.card_set_name_dlg import CardSetNameDlg
 from mnemosyne.pyqt_ui.ui_activate_cards_dlg import Ui_ActivateCardsDlg
 from mnemosyne.libmnemosyne.ui_components.dialogs import ActivateCardsDialog
+from mnemosyne.pyqt_ui.tip_after_starting_n_times import \
+     TipAfterStartingNTimes
 
+class ActivateCardsDlg(QtWidgets.QDialog, ActivateCardsDialog, 
+                       TipAfterStartingNTimes, Ui_ActivateCardsDlg):
+    
+    started_n_times_counter = "started_activate_cards_n_times"
+    tip_after_n_times = \
+        {3 : _("If you find yourself selecting the same tags and card types many types, you can press the button 'Save this set for later use' to give it a name to select it more quickly later."),
+         6 : _("Double-click on the name of a saved set to quickly activate it and close the dialog."),
+         9 : _("You can right-click on the name of a saved set to rename or delete it."),
+         12 : _("If you single-click the name of a saved set, modifications to the selected tags and card types are not saved to that set unless you press 'Save this set for later use' again. This allows you to make some quick-and-dirty temporary modifications.")}
 
-class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
-                       ActivateCardsDialog):
-
-    def __init__(self, component_manager):
-        ActivateCardsDialog.__init__(self, component_manager)
-        QtGui.QDialog.__init__(self, self.main_widget())
+    def __init__(self, **kwds):
+        super().__init__(**kwds)
         self.setupUi(self)
         self.setWindowFlags(self.windowFlags() \
             | QtCore.Qt.WindowMinMaxButtonsHint)
         self.setWindowFlags(self.windowFlags() \
             & ~ QtCore.Qt.WindowContextHelpButtonHint)
         # Initialise widgets.
+        self.was_showing_a_saved_set = False
+        self.is_shutting_down = False
         criterion = self.database().current_criterion()
         self.criterion_classes = \
             self.component_manager.all("criterion")
@@ -30,7 +39,7 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
         for criterion_class in self.criterion_classes:
             widget = self.component_manager.current\
                 ("criterion_widget", used_for=criterion_class)\
-                (self.component_manager, self)
+                (component_manager=self.component_manager, parent=self)
             self.tab_widget.addTab(widget, criterion_class.criterion_type)
             self.widget_for_criterion_type[criterion_class.criterion_type] \
                 = widget
@@ -55,7 +64,7 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
         if event.key() in [QtCore.Qt.Key_Delete, QtCore.Qt.Key_Backspace]:
             self.delete_set()
         else:
-            QtGui.QDialog.keyPressEvent(self, event)
+            QtWidgets.QDialog.keyPressEvent(self, event)
 
     def change_widget(self, index):
         self.saved_sets.clearSelection()
@@ -78,10 +87,11 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
         if active_name:
             item = self.saved_sets.findItems(active_name,
                 QtCore.Qt.MatchExactly)[0]
-            self.saved_sets.setCurrentItem(\
-                item, QtGui.QItemSelectionModel.Rows)
+            self.saved_sets.setCurrentItem(item)
+            self.was_showing_a_saved_set = True
         else:
             self.saved_sets.clearSelection()
+            self.was_showing_a_saved_set = False
         splitter_sizes = self.splitter.sizes()
         if self.saved_sets.count() == 0:
             self.splitter.setSizes([0, sum(splitter_sizes)])
@@ -91,19 +101,19 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
                     0.7 * sum(splitter_sizes)])
 
     def saved_sets_custom_menu(self, pos):
-        menu = QtGui.QMenu()
+        menu = QtWidgets.QMenu()
         menu.addAction(_("Delete"), self.delete_set)
         menu.addAction(_("Rename"), self.rename_set)
         menu.exec_(self.saved_sets.mapToGlobal(pos))
 
-    def save_set(self):
+    def save_set(self):        
         criterion = self.tab_widget.currentWidget().criterion()
         if criterion.is_empty():
             self.main_widget().show_error(\
                 _("This set can never contain any cards!"))
             return
-        CardSetNameDlg(self.component_manager, criterion,
-                       self.criteria_by_name.keys(), self).exec_()
+        CardSetNameDlg(criterion, self.criteria_by_name.keys(), 
+                       component_manager=self.component_manager, parent=self).exec_()
         if not criterion.name:  # User cancelled.
             return
         if criterion.name in self.criteria_by_name.keys():
@@ -134,20 +144,21 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
         if answer == 1:  # Cancel.
             return -1
         else:
-            name = unicode(self.saved_sets.currentItem().text())
+            name = self.saved_sets.currentItem().text()
             criterion = self.criteria_by_name[name]
             self.database().delete_criterion(criterion)
             self.database().save()
             self.update_saved_sets_pane()
 
     def rename_set(self):
-        name = unicode(self.saved_sets.currentItem().text())
+        name = self.saved_sets.currentItem().text()
         criterion = self.criteria_by_name[name]
         criterion.name = name
-        other_names = self.criteria_by_name.keys()
+        other_names = list(self.criteria_by_name.keys())
         other_names.remove(name)
-        CardSetNameDlg(self.component_manager, criterion,
-                       other_names, self).exec_()
+        CardSetNameDlg(criterion, other_names, 
+                       component_manager=self.component_manager, 
+                       parent=self).exec_()
         if criterion.name == name:  # User cancelled.
             return
         self.database().update_criterion(criterion)
@@ -174,7 +185,7 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
         # set, so we need to discard the event then.
         if item is None:
             return
-        name = unicode(item.text())
+        name = item.text()
         criterion = self.criteria_by_name[name]
         self.tab_widget.setCurrentWidget(self.widget_for_criterion_type\
                                              [criterion.criterion_type])
@@ -183,13 +194,18 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
         item = self.saved_sets.findItems(criterion.name,
             QtCore.Qt.MatchExactly)[0]
         self.saved_sets.setCurrentItem(item)
+        self.was_showing_a_saved_set = True
 
     def change_set(self, item, previous_item):
         if previous_item is not None:
             self.load_set(item)
 
-    def select_set_and_close(self, item):
+    def select_set_and_close(self, item): 
         self.load_set(item)
+        # Work around a Qt bug where these calls would still fire when clicking 
+        # in the same area where e.g. the tag browser used to be, even after 
+        # closing the 'Activate cards' window.        
+        self.is_shutting_down = True
         self.accept()
 
     def _store_state(self):
@@ -215,7 +231,9 @@ class ActivateCardsDlg(QtGui.QDialog, Ui_ActivateCardsDlg,
             self.main_widget().show_information(\
 _("You can double-click on the name of a saved set to activate it and close the dialog."))
             self.config()["showed_help_on_double_clicking_sets"] = True
-        # 'accept' does not generate a close event.
+        if len(self.saved_sets.selectedItems()) > 0:
+            criterion.name = self.saved_sets.currentItem().text()
         self.database().set_current_criterion(criterion)
+        # 'accept' does not generate a close event.
         self._store_state()
-        return QtGui.QDialog.accept(self)
+        return QtWidgets.QDialog.accept(self)
