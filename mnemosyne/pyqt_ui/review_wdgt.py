@@ -105,7 +105,7 @@ class QAOptimalSplit(object):
     
     import re
     
-    re_img = re.compile(r"""alt=\"(.+?)\"(.*?)>""",
+    re_img = re.compile(r"""img src=\"file:///(.+?)\"(.*?)>""",
         re.DOTALL | re.IGNORECASE)    
 
     def estimate_height(self, html):
@@ -117,7 +117,6 @@ class QAOptimalSplit(object):
         total_img_width = 0
         for match in self.re_img.finditer(html):
             img_file = match.group(1)
-            img_file = expand_path(img_file, self.database().media_dir())
             if not os.path.exists(img_file):
                 print("Missing path", img_file)
                 continue
@@ -194,11 +193,13 @@ class QAOptimalSplit(object):
                     answer_stretch = required_answer_height
                     question_stretch = total_height_available - answer_stretch
                     if question_stretch < 50:
-                        question_stretch = 50                
+                        question_stretch = 50
+        self.setUpdatesEnabled(False)
         self.vertical_layout.setStretchFactor(\
             self.question_box, question_stretch + self.stretch_offset)
         self.vertical_layout.setStretchFactor(\
             self.answer_box, answer_stretch + self.stretch_offset)
+        self.setUpdatesEnabled(True)
         
         # http://stackoverflow.com/questions/37527714/qt-qml-webview-resizes-really-slowly-when-window-resizing
         
@@ -229,12 +230,12 @@ class QAOptimalSplit(object):
         #self.answer_preview.show()
 
     def reveal_question(self):
-        self.question.setHtml(self.question_text)
+        self.question.setHtml(self.question_text, QtCore.QUrl("file://"))
 
     def reveal_answer(self):
         self.is_answer_showing = True
         self.update_stretch_factors()
-        self.answer.setHtml(self.answer_text)
+        self.answer.setHtml(self.answer_text, QtCore.QUrl("file://"))
         # Forced repaint seems to make things snappier.
         self.question.repaint()
         self.answer.repaint()
@@ -481,7 +482,7 @@ class ReviewWdgt(QtWidgets.QWidget, QAOptimalSplit, ReviewWidget, Ui_ReviewWdgt)
             command = "mplayer.exe -slave -ao win32 -quiet \"" + filename + \
                 "\" -ss " + str(start) + " -endpos " + str(duration) 
         elif sys.platform == "darwin":
-            command = "./mplayer -slave -ao coreaudio -quiet \"" + filename + \
+            command = "mplayer -slave -ao coreaudio -quiet \"" + filename + \
                 "\" -ss " + str(start) + " -endpos " + str(duration)
         else:
             command = "mplayer -slave -quiet \"" + filename + \
