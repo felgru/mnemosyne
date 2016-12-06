@@ -1,15 +1,15 @@
-mnemosyne (2.4~beta1-0.1) UNRELEASED; urgency=medium
+mnemosyne (2.4-0.1) UNRELEASED; urgency=medium
 
   * Non-maintainer upload.
-  * New upstream version 2.4~beta1 (closes: #838258)
+  * New upstream version 2.4 (closes: #838258)
   * use dh_python3 and build-depend on pyqt5 (closes: #825887)
   * remove old debian/README.source
   * set dh compatibility level to 9
   * remove override_dh_install
   * TODO: still does not work due to missing QtWebEngine package
-          (see ITP: #832420)
+          (see #841830 and ITP for QtWebEngine: #832420)
 
- -- Felix Gruber <felgru@gmx.de>  Tue, 29 Nov 2016 23:19:20 +0100
+ -- Felix Gruber <felgru@gmx.de>  Tue, 06 Dec 2016 23:05:30 +0100
 
 mnemosyne (2.2.1-3) unstable; urgency=medium
 
