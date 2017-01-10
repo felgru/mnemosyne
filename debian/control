@@ -10,8 +10,9 @@ Homepage: http://www.mnemosyne-proj.org
 Package: mnemosyne
 Architecture: all
 Depends: ${python3:Depends}, python3 (>= 3.5), python3-pyqt5,
-    python3-pyqt5.qtsql, python3-pyqt5.qtwebengine, python3-matplotlib,
-    python3-cherrypy3, python3-webob, libqt5sql5-sqlite
+    python3-pyqt5.qtsql, python3-pyqt5.qtwebchannel,
+    python3-pyqt5.qtwebengine, python3-matplotlib, python3-cherrypy3,
+    python3-webob, libqt5sql5-sqlite
 Description: spaced repetition flash-card program
  The Mnemosyne software resembles a traditional flash-card program to help you
  memorise question/answer pairs, but with an important twist: it uses a
