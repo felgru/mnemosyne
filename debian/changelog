@@ -1,14 +1,22 @@
-mnemosyne (2.4-0.1) UNRELEASED; urgency=medium
+mnemosyne (2.4-0.1) unstable; urgency=medium
 
+  [ Felix Gruber ]
   * Non-maintainer upload.
   * New upstream version 2.4 (closes: #838258)
   * Use dh_python3 and build-depend on pyqt5 replacing QTWebKit with
     QTWebEngine (closes: #825887)
   * Remove old debian/README.source
-  * Set dh compatibility level to 9.
-  * Remove override_dh_install.
+  * Set dh compatibility level to 9 to avoid deprecation warnings.
+  * Remove obsolete override_dh_install and update debian/rules for building
+    with python3.
 
- -- Felix Gruber <felgru@gmx.de>  Tue, 10 Jan 2017 21:16:45 +0100
+  [ Scott Kitterman ]
+  * Add doc sources from upstream bzr to avoid sourceless javascript, rebuild
+    docs using sphinx, and include html documentation
+  * Add debian/source.lintian-overrides to document that source is present
+    despite lintian's concerns
+
+ -- Scott Kitterman <scott@kitterman.com>  Thu, 12 Jan 2017 21:29:11 -0500
 
 mnemosyne (2.2.1-3) unstable; urgency=medium
 
