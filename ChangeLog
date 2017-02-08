@@ -1,3 +1,43 @@
+(Note for Windows 7 users: if you run into problems related to 
+missing api-ms-win-crt-runtime-l1-1-0-dll make sure your machine
+has the latest Windows patches and/or download this:
+
+https://www.microsoft.com/en-us/download/details.aspx?id=48145
+
+This might also help with other hard crashes.
+
+Additionally, if you see a black screen, start Mnemosyne with the
+--qt-opengl=desktop command line argument.)
+
+
+Mnemosyne 2.4.1 : 2017-01-30
+
+-Updated to PyQt 5.7.1.
+-Fix broken cramming plugin (reported by stevengeorg). 
+-Fix encoding problems with import and export (reported by register2, 
+ MarcoP, abacus).
+-Improve subdirectory handling (reported by abacus, duncantaylor). 
+-Make configuration storing more thread-safe.
+-Warn if an old plugin needs to be updated. 
+-Location and size of 'Add cards' window is saved again (reported by
+ David Schuler).
+-Fix removing tags through card browser (reported by bvauquelin).
+-Fix loss of keyboard focus when switching back to the main window
+ (reported by Jan Egil Hagen and Dan Schmidt).
+-Fixed crash in card browser when working with forbidden tags 
+ (reported by Benjamin Brueck). 
+-Fix autoscaling of Q and A sometimes not working under Linux.
+-Fix error related missing idna encoding when starting server 
+ (reported by Andrea Giordano).
+-Fix error related to upgrading from very old databases (reported by 
+ David Schuler)
+-Fix for latest version of cherrypy unbundling its WSGIserver
+ (reported by Aramís Concepción Durán). 
+-New command line option "--qt-opengl" which can be set to either
+ 'desktop', 'angle' or 'software', which you can play around with if
+ you have display issues.
+
+
 Mnemosyne 2.4 : 2016-12-05
 
 -Upgraded all code to Python3 and PyQt5, so that Mnemosyne no longer
@@ -11,6 +51,7 @@ Mnemosyne 2.4 : 2016-12-05
 -Tag combobox now expands to give suggestions for tags also when using more
  than one tag (patch by Emilian Mihalache)
 
+
 Android 20160502:
 
 -Upgraded backend to Mnemosyne 2.3.6, meaning that logs older than 1 year
@@ -21,6 +62,7 @@ Android 20160502:
 -Implemented full screen immersive mode for Android KitKat and higher.
 -Buttons are now in the middle of the screen to better facilitate
  ergonomic one-handed operation.
+
 
 Mnemosyne 2.3.6 : 2016-05-02
 

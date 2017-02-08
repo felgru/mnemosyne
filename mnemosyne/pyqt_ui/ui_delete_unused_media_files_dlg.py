@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'delete_unused_media_files_dlg.ui'
 #
-# Created by: PyQt5 UI code generator 5.6
+# Created by: PyQt5 UI code generator 5.7.1
 #
 # WARNING! All changes made in this file will be lost!
 

@@ -38,7 +38,7 @@ class Mnemosyne2Cards(FileFormat):
         if metadata is None:  # Cancelled.
             os.chdir(self.orig_dir)
             return -1
-        metadata_file = open("METADATA", "w")
+        metadata_file = open("METADATA", "w", encoding="utf-8")
         for key, value in metadata.items():
             print(key + ":" + value.strip().replace("\n", "<br>"), 
                   file=metadata_file)
@@ -210,7 +210,7 @@ class Mnemosyne2Cards(FileFormat):
                 self.database().media_dir(), "METADATA")
         if show_metadata:
             metadata = {}
-            for line in open(metadata_filename):
+            for line in open(metadata_filename, encoding="utf-8"):
                 key, value = line.split(":", 1)
                 metadata[key] = value.replace("<br>", "\n")
             self.controller().show_export_metadata_dialog(metadata, read_only=True)

@@ -7,6 +7,7 @@ import re
 import sys
 import time
 import sqlite3
+import threading
 import importlib
 
 from mnemosyne.libmnemosyne.translator import _
@@ -87,6 +88,7 @@ class Configuration(Component, dict):
         self.data_dir = None
         self.config_dir = None
         self.keys_to_sync = []
+        self.lock = threading.Lock()
         self.determine_dirs()
         
     def activate(self):
@@ -94,14 +96,14 @@ class Configuration(Component, dict):
         self.load()
         self.load_user_config()
         self.set_defaults()
-
+   
     def set_defaults(self):
 
         """Fill the config with default values.  Is called after every load,
         since a new version of Mnemosyne might have introduced new keys.
 
         """
-
+        
         for key, value in \
             list({"last_database": \
                 self.database().default_name + self.database().suffix,
@@ -194,28 +196,31 @@ class Configuration(Component, dict):
         # Allow other plugins or frontend to set their configuration data.
         for f in self.component_manager.all("hook", "configuration_defaults"):
             f.run()
-        self.save()
+        self.save()       
 
     def __setitem__(self, key, value):
-        if key in self.keys_to_sync:
-            # Don't log when reading the settings from file during startup.
-            if self.log().active:
-                self.log().edited_setting(key)
-        dict.__setitem__(self, key, value)
+        with self.lock:
+            if key in self.keys_to_sync:
+                # Don't log when reading the settings from file during startup.
+                if self.log().active:
+                    self.log().edited_setting(key)
+            dict.__setitem__(self, key, value)
 
     def load(self):
         filename = os.path.join(self.config_dir, "config.db")
-        con = sqlite3.connect(filename)
         # Create database tables if needed.
-        is_new = (con.execute("""select count() from sqlite_master where 
-            type='table' and name='config';""").fetchone()[0] == 0)
-        if is_new:
-            con.executescript("""
-            create table config(
-                key text primary key,
-                value text
-            );""")
-            con.commit()
+        with self.lock:
+            con = sqlite3.connect(filename)
+            is_new = (con.execute(\
+                """select count() from sqlite_master where 
+                type='table' and name='config';""").fetchone()[0] == 0)               
+            if is_new:
+                con.executescript("""
+                create table config(
+                    key text primary key,
+                    value text
+                );""")
+                con.commit()
         # Quick-and-dirty system to allow us to instantiate GUI variables
         # from the config db. The alternatives (e.g. having the frontend pass
         # along modules to import) seem to be much more verbose and quirky.
@@ -224,29 +229,33 @@ class Configuration(Component, dict):
         except:
             pass
         # Set config settings.
-        for cursor in con.execute("select key, value from config"):
+        for cursor in con.execute("select key, value from config"):          
             # When importing Python 2 representations, strip the L
             # from long integers.
-            value =  re_long_int.sub(lambda x : x.group()[:-1], cursor[1])
+            value = re_long_int.sub(lambda x : x.group()[:-1], cursor[1])
             try:
                 self[cursor[0]] = eval(value)
             except:
                 # This can fail if we are running headless now after running
                 # the GUI previously.
                 pass
-        con.close()
-
+        with self.lock:    
+            con.commit()   
+            con.close()        
+        
     def save(self):
-        filename = os.path.join(self.config_dir, "config.db")
-        con = sqlite3.connect(filename)
-        # Make sure the entries exist.
-        con.executemany("insert or ignore into config(key, value) values(?,?)", 
-            ((key, repr(value)) for key, value in self.items()))
-        # Make sure they have the right data.
-        con.executemany("update config set value=? where key=?",
-            ((repr(value), key) for key, value in self.items()))   
-        con.commit()
-        con.close()
+        with self.lock:
+            filename = os.path.join(self.config_dir, "config.db")
+            con = sqlite3.connect(filename)      
+            # Make sure the entries exist.
+            con.executemany\
+                ("insert or ignore into config(key, value) values(?,?)", 
+                ((key, repr(value)) for key, value in self.items()))
+            # Make sure they have the right data.
+            con.executemany("update config set value=? where key=?",
+                ((repr(value), key) for key, value in self.items()))         
+            con.commit()    
+            con.close()
 
     def determine_dirs(self):  # pragma: no cover        
         # If the config dir was already set by the user, use that.

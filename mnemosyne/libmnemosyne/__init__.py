@@ -148,14 +148,19 @@ class Mnemosyne(Component):
          ("mnemosyne.libmnemosyne.file_formats.cuecard_wcu",
           "CuecardWcu")]
         self.extra_components_for_plugin = {}
+        
+    def android_log(self, message):
+        if hasattr(self, "android"):
+            self.android.Log("Mnemosyne", message)        
 
-    def handle_exception(self, type, value, tb):
+    def handle_exception(self, type, value, tb):        
         body = "An unexpected error has occurred.\n" + \
             "Please forward the following info to the developers:\n\n" + \
             "Traceback (innermost last):\n"
         list = traceback.format_tb(tb, limit=None) + \
                traceback.format_exception_only(type, value)
         body = body + "%-20s %s" % ("".join(list[:-1]), list[-1])
+        self.android_log(body)
         try:
             if sys.platform != "win32":
                 sys.stderr.write(body)
@@ -184,11 +189,7 @@ class Mnemosyne(Component):
             self.config().config_dir = data_dir
         if config_dir:
             self.config().config_dir = config_dir
-        # Upgrade config if needed.
-        if automatic_upgrades:
-            from mnemosyne.libmnemosyne.upgrades.upgrade3 import Upgrade3
-            Upgrade3(self.component_manager).run() 
-        self.activate_components()
+        self.activate_components()      
         register_component_manager(self.component_manager,
                                    self.config()["user_id"])
         self.execute_user_plugin_dir()
@@ -231,7 +232,7 @@ class Mnemosyne(Component):
             from mnemosyne.libmnemosyne.upgrades.upgrade1 import Upgrade1
             Upgrade1(self.component_manager).run()
         # Finally, we can activate the main widget.
-        self.main_widget().activate()
+        self.main_widget().activate()    
 
     def register_components(self):
         
@@ -251,8 +252,7 @@ class Mnemosyne(Component):
         for plugin_name in self.extra_components_for_plugin:
             for module_name, class_name in \
                     self.extra_components_for_plugin[plugin_name]:
-                exec("from %s import %s" % (module_name, class_name))
-                exec("component = %s" % class_name)
+                component = getattr(importlib.import_module(module_name), class_name)
                 self.component_manager.add_component_to_plugin(\
                     plugin_name, component)
 
@@ -262,7 +262,9 @@ class Mnemosyne(Component):
         in the correct order: first config, followed by log and then the rest.
 
         """
-
+        
+        # Help with debugging under Android.  
+        self.component_manager.android_log = self.android_log
         # Activate config and inject necessary settings.
         try:
             self.component_manager.current("config").activate()
@@ -329,7 +331,7 @@ class Mnemosyne(Component):
             if not os.path.exists(path):
                 try:
                     self.database().new(path)
-                except:
+                except Exception as e:
                     from mnemosyne.libmnemosyne.translator import _
                     raise RuntimeError(_("Previous drive letter no longer available."))
             else:
@@ -340,8 +342,12 @@ class Mnemosyne(Component):
             self.main_widget().show_error(str(e))
             self.main_widget().show_information(\
 _("If you are using a USB key, refer to the instructions on the website so as not to be affected by drive letter changes."))
+            # Try to open a new database, but not indefinitely, otherwise this
+            # could turn a crash into a much nastier one on Android.
             success = False
-            while not success:
+            counter = 0
+            while not success and counter <= 5:
+                counter += 1  
                 try:
                     self.database().abandon()
                     self.controller().show_open_file_dialog()

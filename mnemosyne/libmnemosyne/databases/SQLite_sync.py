@@ -18,7 +18,9 @@ from mnemosyne.libmnemosyne.card import Card
 from mnemosyne.libmnemosyne.translator import _
 from mnemosyne.libmnemosyne.card_type import CardType
 from mnemosyne.libmnemosyne.fact_view import FactView
-from mnemosyne.libmnemosyne.utils import expand_path, MnemosyneError
+from mnemosyne.libmnemosyne.utils import MnemosyneError
+from mnemosyne.libmnemosyne.utils import normalise_path, expand_path
+
 
 re_src = re.compile(r"""(src|data)=\"(.+?)\"""", re.DOTALL | re.IGNORECASE)
 
@@ -185,7 +187,8 @@ class SQLiteSync(object):
             """select object_id from log where _id>? and (event_type=? or
             event_type=?)""", (_id, EventTypes.ADDED_MEDIA_FILE,
             EventTypes.EDITED_MEDIA_FILE))]:
-            if os.path.exists(expand_path(filename, self.media_dir())):
+            if os.path.exists(\
+                normalise_path(expand_path(filename, self.media_dir()))):
                 filenames.add(filename)                
         return filenames
 
@@ -664,7 +667,7 @@ class SQLiteSync(object):
         """
 
         filename = log_entry["fname"]
-        full_path = expand_path(filename, self.media_dir())
+        full_path = normalise_path(expand_path(filename, self.media_dir()))
         if os.path.exists(full_path):
             self.con.execute("""insert or replace into media(filename, _hash)
                 values(?,?)""", (filename, self._media_hash(filename)))
