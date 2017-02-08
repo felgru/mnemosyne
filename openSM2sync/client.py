@@ -227,7 +227,7 @@ class Client(Partner):
             results = {0: "KEEP_LOCAL", 1: "KEEP_REMOTE", 2: "CANCEL"}
             result = results[result]
         else:
-            message += " " + "Your client only stores part of the server " + \
+            message += " " + "Your local client only stores part of the remote server " + \
                 "database or uses a different software version, " + \
                 "so you can only fetch the remote version."
             result = self.ui.show_question(message,
@@ -300,7 +300,8 @@ class Client(Partner):
             response = self.con.getresponse()
         except Exception as e:
             print(e)
-            raise SyncError("Could not connect to server!")
+            raise SyncError("Could not connect to server!\n\n" \
+                            + traceback_string())
         # Check for errors, but don't force a restore from backup if we can't
         # login.
         try:

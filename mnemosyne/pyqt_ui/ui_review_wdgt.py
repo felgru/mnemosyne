@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'review_wdgt.ui'
 #
-# Created by: PyQt5 UI code generator 5.6
+# Created by: PyQt5 UI code generator 5.7.1
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -32,8 +32,9 @@ class Ui_ReviewWdgt(object):
         sizePolicy.setHeightForWidth(self.question.sizePolicy().hasHeightForWidth())
         self.question.setSizePolicy(sizePolicy)
         self.question.setMinimumSize(QtCore.QSize(295, 50))
+        self.question.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.question.setAcceptDrops(False)
-        self.question.setUrl(QtCore.QUrl("about:blank"))
+        self.question.setProperty("url", QtCore.QUrl("about:blank"))
         self.question.setObjectName("question")
         self.question_box.addWidget(self.question)
         self.vertical_layout.addLayout(self.question_box)
@@ -49,8 +50,9 @@ class Ui_ReviewWdgt(object):
         sizePolicy.setHeightForWidth(self.answer.sizePolicy().hasHeightForWidth())
         self.answer.setSizePolicy(sizePolicy)
         self.answer.setMinimumSize(QtCore.QSize(295, 50))
+        self.answer.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.answer.setAcceptDrops(False)
-        self.answer.setUrl(QtCore.QUrl("about:blank"))
+        self.answer.setProperty("url", QtCore.QUrl("about:blank"))
         self.answer.setObjectName("answer")
         self.answer_box.addWidget(self.answer)
         self.vertical_layout.addLayout(self.answer_box)
@@ -101,12 +103,12 @@ class Ui_ReviewWdgt(object):
         self.answer_label.setText(_('Answer:'))
         self.show_button.setText(_('Show &answer'))
         self.grades.setTitle(_('Grade your answer:'))
-        self.grade_0_button.setText(_('0'))
-        self.grade_1_button.setText(_('1'))
-        self.grade_2_button.setText(_('2'))
-        self.grade_3_button.setText(_('3'))
-        self.grade_4_button.setText(_('4'))
-        self.grade_5_button.setText(_('5'))
+        self.grade_0_button.setProperty("text", _('0'))
+        self.grade_1_button.setProperty("text", _('1'))
+        self.grade_2_button.setProperty("text", _('2'))
+        self.grade_3_button.setProperty("text", _('3'))
+        self.grade_4_button.setProperty("text", _('4'))
+        self.grade_5_button.setProperty("text", _('5'))
 
 from mnemosyne.pyqt_ui.qpushbutton2 import QPushButton2
 from mnemosyne.pyqt_ui.qwebengineview2 import QWebEngineView2

@@ -31,7 +31,7 @@ run: build
 build:
 	# Just the bare minimum to get things running
 	cd mnemosyne/pyqt_ui && make
-	cd mnemosyne/pyqt_ui && pyrcc5 -o mnemosyne_rc.py mnemosyne.qrc	
+	cd mnemosyne/pyqt_ui && pyrcc5 -o mnemosyne_rc.py mnemosyne.qrc
 	
 build-all-deps:
 	# Also rebuilds the docs and the translations.
@@ -54,7 +54,7 @@ coverage: FORCE
 	./bin/nosetests --with-coverage --cover-erase \
 	--cover-package=mnemosyne.libmnemosyne,openSM2sync || (echo "testsuite failed")
 	./bin/coverage html
-	firefox htmlcov/index.html || chromium htmlcov/index.html || google-chrome htmlcov/index.html
+	firefox htmlcov/index.html || chromium htmlcov/index.html || google-chrome htmlcov/index.html || chrome htmlcov/index.html	
 	
 coverage-windows: FORCE
 	rm -rf .coverage cover htmlcov

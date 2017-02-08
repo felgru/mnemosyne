@@ -6,13 +6,16 @@ First install the following dependencies:
 
 -Python 3.5 or later (http://www.python.org)
 -PyQt 5.6 or later
- (http://www.riverbankcomputing.co.uk/software/pyqt/download)
+ (http://www.riverbankcomputing.co.uk/software/pyqt/download, which boils
+ down to 'sudo pip3 install PyQt5').
 -If you want to be able to enter formulas using latex syntax, make sure
  that latex and dvipng are installed.
 -Matplotlib (http://matplotlib.sourceforge.net/)
 -EasyInstall (http://peak.telecommunity.com/DevCenter/EasyInstall)
--CherryPy 3.2 or later (http://www.cherrypy.org)
+-cheroot 5 or later (https://pypi.python.org/pypi/Cheroot/, 
+ pip3 install cheroot)
 -Webob 1.4 or later (http://webob.org)
+-PIL (https://python-pillow.org, pip3 install pillow)
 
 To actually install mnemosyne:
 -Extraxt the .tar.gz file and change to its root directory (i.e.

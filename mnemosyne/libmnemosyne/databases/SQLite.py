@@ -255,7 +255,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             from mnemosyne.libmnemosyne.databases._sqlite3 import _Sqlite3
             self._connection = _Sqlite3(self.component_manager, self._path)
             #from mnemosyne.libmnemosyne.databases._apsw import _APSW
-            #self._connection = _APSW(self.component_manager, self._path)
+            #self._connection = _APSW(self.component_manager, self._path)       
         return self._connection
 
     def release_connection(self):
@@ -334,7 +334,7 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
         self._current_criterion.id = "__DEFAULT__"
         self._current_criterion.name = self.default_criterion_name
         self._current_criterion._tag_ids_active.add(tag._id)
-        self.add_criterion(self._current_criterion)
+        self.add_criterion(self._current_criterion)     
 
     def load(self, path):
         if self.is_loaded():
@@ -422,8 +422,12 @@ class SQLite(Database, SQLiteSync, SQLiteMedia, SQLiteLogging,
             return
         backupdir = os.path.join(self.config().data_dir, "backups")
         db_name = os.path.basename(self._path).rsplit(".", 1)[0]
-        backupfile = db_name + "-" + \
-            datetime.datetime.today().strftime("%Y%m%d-%H%M%S.db")
+        try:
+            backupfile = db_name + "-" + \
+                datetime.datetime.today().strftime("%Y%m%d-%H%M%S.db")        
+        except:  # Work around strange Android library bug.
+            from mnemosyne.libmnemosyne.utils import rand_uuid
+            backupfile = db_name + "-" + rand_uuid() + ".db" 
         backupfile = os.path.join(backupdir, backupfile)
         failed = False
         try:

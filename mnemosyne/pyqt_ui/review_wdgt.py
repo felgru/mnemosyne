@@ -110,13 +110,15 @@ class QAOptimalSplit(object):
 
     def estimate_height(self, html):
         import math
-        from mnemosyne.libmnemosyne.utils import expand_path
+        from mnemosyne.libmnemosyne.utils import expand_path, _abs_path
         from PIL import Image
          
         max_img_height = 0
         total_img_width = 0
         for match in self.re_img.finditer(html):
             img_file = match.group(1)
+            if not _abs_path(img_file): # Linux issue
+                img_file = "/" + img_file
             if not os.path.exists(img_file):
                 print("Missing path", img_file)
                 continue
@@ -234,7 +236,7 @@ class QAOptimalSplit(object):
 
     def reveal_answer(self):
         self.is_answer_showing = True
-        self.update_stretch_factors()
+        self.update_stretch_factors() 
         self.answer.setHtml(self.answer_text, QtCore.QUrl("file://"))
         # Forced repaint seems to make things snappier.
         self.question.repaint()
@@ -297,10 +299,15 @@ class ReviewWdgt(QtWidgets.QWidget, QAOptimalSplit, ReviewWidget, Ui_ReviewWdgt)
         self.question.selectionChanged.connect(self.selection_changed_in_q)
         self.answer.selectionChanged.connect(self.selection_changed_in_a)
         self.mplayer = QtCore.QProcess()
-        self.media_queue = []       
+        self.media_queue = [] 
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
         
     def deactivate(self):
         self.stop_media()
+           
+    def focusInEvent(self, event):
+        self.restore_focus()
+        super().focusInEvent(event)    
 
     def changeEvent(self, event):
         if hasattr(self, "show_button"):
@@ -358,6 +365,9 @@ class ReviewWdgt(QtWidgets.QWidget, QAOptimalSplit, ReviewWidget, Ui_ReviewWdgt)
         </td></tr></table></body></html>"""
 
     def scroll_down(self):
+        return
+        # TODO: reimplement after webkit is back.
+        
         if self.review_controller().is_question_showing() or \
            self.review_controller().card.fact_view.a_on_top_of_q:
             frame = self.question.page().mainFrame()
@@ -369,6 +379,9 @@ class ReviewWdgt(QtWidgets.QWidget, QAOptimalSplit, ReviewWidget, Ui_ReviewWdgt)
         frame.evaluateJavaScript("window.scrollTo(%d, %d);" % (x, y))
 
     def scroll_up(self):
+        return
+        # TODO: reimplement after webkit is back.
+         
         if self.review_controller().is_question_showing() or \
            self.review_controller().card.fact_view.a_on_top_of_q:
             frame = self.question.page().mainFrame()
